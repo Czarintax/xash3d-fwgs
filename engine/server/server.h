@@ -379,10 +379,11 @@ typedef struct
 
 //=============================================================================
 
-extern server_static_t svs RENAME_SYMBOL( "svs_" ); // persistant server info
-extern server_t        sv RENAME_SYMBOL( "sv_" );   // local server
-extern svgame_static_t svgame;                      // persistant game info
-extern areanode_t      sv_areanodes[];              // AABB dynamic tree
+extern EXPORT server_static_t svs; 					// persistant server info
+extern EXPORT server_t        sv;   				// local server
+extern EXPORT double 		  realtime;
+extern EXPORT svgame_static_t svgame;               // persistant game info
+extern EXPORT areanode_t      sv_areanodes[];       // AABB dynamic tree
 
 extern convar_t		mp_logecho;
 extern convar_t		mp_logfile;
