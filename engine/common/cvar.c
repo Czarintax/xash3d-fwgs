@@ -701,7 +701,7 @@ Cvar_DirectSet
 way to change value for many cvars
 ============
 */
-void GAME_EXPORT Cvar_DirectSet( convar_t *var, const char *value )
+EXPORT void Cvar_DirectSet( convar_t *var, const char *value )
 {
 	const char *fixed_string;
 	size_t fixed_string_len;
