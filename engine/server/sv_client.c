@@ -570,7 +570,7 @@ or unwillingly.  This is NOT called if the entire server is quiting
 or crashing.
 =====================
 */
-void SV_DropClient( sv_client_t *cl, qboolean crash )
+EXPORT void SV_DropClient( sv_client_t *cl, qboolean crash )
 {
 	int	i;
 
