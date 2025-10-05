@@ -761,7 +761,7 @@ Cvar_DirectSetValue
 functionally is the same as Cvar_SetValue but for direct cvar access
 ============
 */
-void Cvar_DirectSetValue( convar_t *var, float value )
+EXPORT void Cvar_DirectSetValue( convar_t *var, float value )
 {
 	char	val[32];
 
