@@ -463,7 +463,7 @@ extern convar_t		sv_expose_player_list;
 //
 void SV_FinalMessage( const char *message, qboolean reconnect );
 void SV_KickPlayer( sv_client_t *cl, const char *fmt, ... ) FORMAT_CHECK( 2 );
-void SV_DropClient( sv_client_t *cl, qboolean crash ) RENAME_SYMBOL( "SV_DropClient_" );
+EXPORT void SV_DropClient( sv_client_t *cl, qboolean crash );
 void SV_UpdateMovevars( qboolean initialize );
 int SV_ModelIndex( const char *name );
 int SV_SoundIndex( const char *name );
