@@ -40,8 +40,8 @@ convar_t *Cvar_Get( const char *var_name, const char *value, int flags, const ch
 convar_t *Cvar_Getf( const char *var_name, int flags, const char *description, const char *format, ... ) FORMAT_CHECK( 4 );
 void Cvar_LookupVars( int checkbit, void *buffer, void *ptr, setpair_t callback );
 void Cvar_FullSet( const char *var_name, const char *value, int flags );
-void Cvar_DirectSet( convar_t *var, const char *value );
-void Cvar_DirectSetValue( convar_t *var, float value );
+EXPORT void Cvar_DirectSet( convar_t *var, const char *value );
+EXPORT void Cvar_DirectSetValue( convar_t *var, float value );
 void Cvar_Set( const char *var_name, const char *value );
 void Cvar_SetValue( const char *var_name, float value );
 const char *Cvar_BuildAutoDescription( const char *szName, int flags ) RETURNS_NONNULL;
