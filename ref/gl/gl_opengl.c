@@ -1180,6 +1180,7 @@ static void GL_InitCommands( void )
 	gEngfuncs.Cvar_RegisterVariable( &gl_round_down );
 	gEngfuncs.Cvar_RegisterVariable( &gl_overbright );
 	gEngfuncs.Cvar_RegisterVariable( &gl_fog );
+	gEngfuncs.Cvar_RegisterVariable( &gl_wh );
 
 	// these cvar not used by engine but some mods requires this
 	gEngfuncs.Cvar_RegisterVariable( &gl_polyoffset );
