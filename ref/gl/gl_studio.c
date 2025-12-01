@@ -2879,6 +2879,17 @@ static void R_StudioSetupRenderer( int rendermode )
 		for( i = 0; i < phdr->numbones; i++ )
 			Matrix3x4_ConcatTransforms( g_studio.worldtransform[i], g_studio.bonestransform[i], boneinfo[i].poseToBone );
 	}
+
+	if ( gl_wh.value ) 
+	{
+		pglDisable( GL_DEPTH_TEST );
+		pglDepthRange( 0.0, 0.5 );
+	}
+	else
+	{
+		pglEnable( GL_DEPTH_TEST );
+		pglDepthRange( 0.0, 1.0 );
+	}
 }
 
 /*
