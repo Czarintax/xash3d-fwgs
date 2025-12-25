@@ -53,7 +53,9 @@ LINKFLAGS = {
 		'msvc': ['/SAFESEH:NO']
 	},
 	'debug': {
-		'msvc': ['/INCREMENTAL', '/SAFESEH:NO']
+		'msvc': ['/INCREMENTAL', '/SAFESEH:NO'],
+		'gcc':  ['-no-pie'],
+		'clang':['-no-pie']
 	}
 }
 
@@ -61,8 +63,8 @@ CFLAGS = {
 	'common': {
 		# disable thread-safe local static initialization for C++11 code, as it cause crashes on Windows XP
 		'msvc':    ['/D_USING_V110_SDK71_', '/FS', '/Zc:threadSafeInit-', '/MT', '/MP', '/Zc:__cplusplus'],
-		'clang':   ['-g', '-gdwarf-2', '-fvisibility=hidden', '-fno-threadsafe-statics', '-fasynchronous-unwind-tables'],
-		'gcc':     ['-g', '-fvisibility=hidden', '-fasynchronous-unwind-tables'],
+		'clang':   ['-g', '-gdwarf-2', '-fvisibility=default', '-fno-threadsafe-statics', '-fasynchronous-unwind-tables'],
+		'gcc':     ['-g', '-fvisibility=default', '-fasynchronous-unwind-tables'],
 		'owcc':	   ['-fno-short-enum', '-ffloat-store', '-g3']
 	},
 	'fast': {
@@ -92,8 +94,10 @@ CFLAGS = {
 		'default': ['-O3']
 	},
 	'debug': {
-		'msvc':    ['/Od', '/ZI'],
-		'owcc':    ['-O0', '-fno-omit-frame-pointer', '-funwind-tables', '-fno-omit-leaf-frame-pointer'],
+		'msvc': ['/Od', '/ZI'],
+		'owcc': ['-O0', '-fno-omit-frame-pointer', '-funwind-tables', '-fno-omit-leaf-frame-pointer'],
+		'gcc':  ['-O0', '-g', '-fno-omit-frame-pointer', '-fno-pie'],
+		'clang':['-O0', '-g', '-fno-omit-frame-pointer', '-fno-pie'],
 		'default': ['-O0']
 	},
 	'msan': {
