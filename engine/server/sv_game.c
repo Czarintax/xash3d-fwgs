@@ -2583,6 +2583,9 @@ static int SV_CanRewriteMessage( int msg_num )
 	return 0;
 }
 
+// Track message nesting level for metamod/AMX Mod X compatibility
+static int msg_nest_level = 0;
+
 static qboolean SV_RewriteMessage( void )
 {
 	vec3_t origin;
@@ -2633,9 +2636,12 @@ pfnMessageBegin
 static void GAME_EXPORT pfnMessageBegin( int msg_dest, int msg_num, const float *pOrigin, edict_t *ed )
 {
 	int	i, iSize;
-
-	if( svgame.msg_started )
+	// Allow nested message calls (for metamod/AMX Mod X compatibility)
+	// Only check msg_started if we are at the top level
+	if( msg_nest_level == 0 && svgame.msg_started )
 		Host_Error( "%s: New message started when msg '%s' has not been sent yet\n", __func__, svgame.msg_name );
+	
+	msg_nest_level++;
 	svgame.msg_started = true;
 
 	// check range
@@ -2725,6 +2731,10 @@ static void GAME_EXPORT pfnMessageEnd( void )
 	if( svgame.msg_name ) name = svgame.msg_name;
 	if( !svgame.msg_started ) Host_Error( "%s: called with no active message\n", __func__ );
 	svgame.msg_started = false;
+	
+	// Decrement nesting level
+	if( msg_nest_level > 0 )
+		msg_nest_level--;
 
 	if( MSG_CheckOverflow( &sv.multicast ))
 	{

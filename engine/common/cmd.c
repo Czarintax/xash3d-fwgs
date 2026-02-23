@@ -174,6 +174,20 @@ void Cbuf_InsertText( const char *text )
 
 /*
 ============
+Cbuf_GetFreeSpace
+
+Returns available space in command buffer
+============
+*/
+size_t Cbuf_GetFreeSpace( void )
+{
+	if( cmd_text.cursize >= cmd_text.maxsize )
+		return 0;
+	return cmd_text.maxsize - cmd_text.cursize;
+}
+
+/*
+============
 Cbuf_Execute
 ============
 */
