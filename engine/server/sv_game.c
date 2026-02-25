@@ -2586,54 +2586,6 @@ static int SV_CanRewriteMessage( int msg_num )
 // Track message nesting level for metamod/AMX Mod X compatibility
 static int msg_nest_level = 0;
 
-// Message state stack for proper nesting support
-#define MAX_MSG_NEST_LEVEL 8
-typedef struct
-{
-	int msg_index;
-	int msg_dest;
-	int msg_realsize;
-	int msg_size_index;
-	const char *msg_name;
-	edict_t *msg_ent;
-	vec3_t msg_org;
-} msg_state_t;
-
-static msg_state_t msg_state_stack[MAX_MSG_NEST_LEVEL];
-
-static void SV_PushMessageState( void )
-{
-	if( msg_nest_level >= MAX_MSG_NEST_LEVEL )
-	{
-		Con_Printf( S_ERROR "SV_PushMessageState: message nesting too deep\n" );
-		return;
-	}
-	
-	msg_state_t *state = &msg_state_stack[msg_nest_level];
-	state->msg_index = svgame.msg_index;
-	state->msg_dest = svgame.msg_dest;
-	state->msg_realsize = svgame.msg_realsize;
-	state->msg_size_index = svgame.msg_size_index;
-	state->msg_name = svgame.msg_name;
-	state->msg_ent = svgame.msg_ent;
-	VectorCopy( svgame.msg_org, state->msg_org );
-}
-
-static void SV_PopMessageState( void )
-{
-	if( msg_nest_level <= 0 || msg_nest_level > MAX_MSG_NEST_LEVEL )
-		return;
-	
-	msg_state_t *state = &msg_state_stack[msg_nest_level - 1];
-	svgame.msg_index = state->msg_index;
-	svgame.msg_dest = state->msg_dest;
-	svgame.msg_realsize = state->msg_realsize;
-	svgame.msg_size_index = state->msg_size_index;
-	svgame.msg_name = state->msg_name;
-	svgame.msg_ent = state->msg_ent;
-	VectorCopy( state->msg_org, svgame.msg_org );
-}
-
 static qboolean SV_RewriteMessage( void )
 {
 	vec3_t origin;
@@ -2688,10 +2640,6 @@ static void GAME_EXPORT pfnMessageBegin( int msg_dest, int msg_num, const float 
 	// Only check msg_started if we are at the top level
 	if( msg_nest_level == 0 && svgame.msg_started )
 		Host_Error( "%s: New message started when msg '%s' has not been sent yet\n", __func__, svgame.msg_name );
-	
-	// Save current message state before starting nested message
-	if( msg_nest_level > 0 )
-		SV_PushMessageState();
 	
 	msg_nest_level++;
 	svgame.msg_started = true;
@@ -2784,12 +2732,9 @@ static void GAME_EXPORT pfnMessageEnd( void )
 	if( !svgame.msg_started ) Host_Error( "%s: called with no active message\n", __func__ );
 	svgame.msg_started = false;
 	
-	// Decrement nesting level and restore previous message state
+	// Decrement nesting level
 	if( msg_nest_level > 0 )
 		msg_nest_level--;
-	
-	if( msg_nest_level > 0 )
-		SV_PopMessageState();
 
 	if( MSG_CheckOverflow( &sv.multicast ))
 	{
