@@ -2198,7 +2198,7 @@ pfnEmitAmbientSound
 
 =================
 */
-static void GAME_EXPORT pfnEmitAmbientSound( edict_t *ent, float *pos, const char *sample, float vol, float attn, int flags, int pitch )
+void GAME_EXPORT pfnEmitAmbientSound( edict_t *ent, float *pos, const char *sample, float vol, float attn, int flags, int pitch )
 {
 	int	msg_dest;
 
@@ -2639,7 +2639,7 @@ pfnMessageBegin
 
 =============
 */
-static void GAME_EXPORT pfnMessageBegin( int msg_dest, int msg_num, const float *pOrigin, edict_t *ed )
+void GAME_EXPORT pfnMessageBegin( int msg_dest, int msg_num, const float *pOrigin, edict_t *ed )
 {
 	int	i, iSize;
 	// Allow nested message calls (for metamod/AMX Mod X compatibility)
@@ -2934,7 +2934,7 @@ pfnWriteString
 
 =============
 */
-static void GAME_EXPORT pfnWriteString( const char *src )
+void GAME_EXPORT pfnWriteString( const char *src )
 {
 	MSG_WriteString( &sv.multicast, src );
 	if( svgame.msg_trace ) Con_Printf( "\t^3%s( %s )\n", __func__, src );
@@ -4131,7 +4131,7 @@ register or returns already registered event id
 a type of event is ignored at this moment
 =============
 */
-static word GAME_EXPORT pfnPrecacheEvent( int type, const char *psz )
+word GAME_EXPORT pfnPrecacheEvent( int type, const char *psz )
 {
 	return (word)SV_EventIndex( psz );
 }

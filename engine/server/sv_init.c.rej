@@ -1,0 +1,13 @@
+--- sv_init.c
++++ sv_init.c
+@@ -598,6 +598,10 @@ void SV_ActivateServer( int runPhysics )
+ // Activate the DLL server code
+ svgame.globals->time = sv.time;
+ svgame.dllFuncs.pfnServerActivate( svgame.edicts, svgame.numEntities, svs.maxclients );
++
++// Execute command buffer to process any commands queued during ServerActivate
++// (e.g., plugin configs from AMX Mod X)
++Cbuf_Execute();
+ 
+ SV_SetStringArrayMode( true );
+ 
