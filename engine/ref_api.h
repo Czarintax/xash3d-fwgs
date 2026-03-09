@@ -26,9 +26,10 @@ GNU General Public License for more details.
 #include "com_model.h"
 #include "studio.h"
 #include "r_efx.h"
-#include "com_image.h"
 #include "filesystem.h"
 #include "common/protocol.h"
+#include "cvardef.h"
+#include "q_client.h"
 
 // RefAPI changelog:
 // 1. Initial release
@@ -60,7 +61,8 @@ GNU General Public License for more details.
 // 10. Added R_GetWindowHandle to retrieve platform-specific window object.
 // 11. Added size argument to Mod_ProcessRenderData
 // 12. Added Image_CalcImageSize
-#define REF_API_VERSION 12
+// 13. Removed ignore_flags argument from GetCvarPointer
+#define REF_API_VERSION 13
 
 #define TF_SKY		(TF_SKYSIDE|TF_NOMIPMAP|TF_ALLOW_NEAREST)
 #define TF_FONT		(TF_NOMIPMAP|TF_CLAMP|TF_ALLOW_NEAREST)
@@ -220,12 +222,12 @@ enum ref_defaultsprite_e
 
 // the order of first three is important!
 // so you can use this value in IEngineStudio.StudioIsHardware
-enum ref_graphic_apis_e
+typedef enum ref_graphic_apis_e
 {
 	REF_SOFTWARE,	// hypothetical: just make a surface to draw on, in software
 	REF_GL,		// create GL context
 	REF_D3D,	// Direct3D
-};
+} ref_graphic_apis_t;
 
 typedef enum
 {
@@ -344,7 +346,7 @@ typedef struct ref_api_s
 
 	// cvar handlers
 	cvar_t   *(*Cvar_Get)( const char *szName, const char *szValue, int flags, const char *description );
-	cvar_t   *(*pfnGetCvarPointer)( const char *name, int ignore_flags );
+	cvar_t   *(*pfnGetCvarPointer)( const char *name );
 	float       (*pfnGetCvarFloat)( const char *szName );
 	const char *(*pfnGetCvarString)( const char *szName ) PFN_RETURNS_NONNULL;
 	void        (*Cvar_SetValue)( const char *name, float value );
@@ -398,7 +400,7 @@ typedef struct ref_api_s
 	void (*CL_ThinkParticle)( double frametime, particle_t *p );
 	void (*R_FreeDeadParticles)( particle_t **ppparticles );
 	particle_t *(*CL_AllocParticleFast)( void ); // unconditionally give new particle pointer from cl_free_particles
-	struct dlight_s *(*CL_AllocElight)( int key );
+	dlight_t *(*CL_AllocElight)( int key );
 	struct model_s *(*GetDefaultSprite)( enum ref_defaultsprite_e spr );
 	void		(*R_StoreEfrags)( struct efrag_s **ppefrag, int framecount );// store efrags for static entities
 
@@ -447,7 +449,7 @@ typedef struct ref_api_s
 	// video init
 	// try to create window
 	// will call GL_SetupAttributes in case of REF_GL
-	qboolean  (*R_Init_Video)( int type ); // will also load and execute renderer config(see R_GetConfigName)
+	qboolean (*R_Init_Video)( ref_graphic_apis_t type ); // will also load and execute renderer config(see R_GetConfigName)
 	void (*R_Free_Video)( void );
 
 	// GL
@@ -681,7 +683,7 @@ typedef int (*REFAPI)( int version, ref_interface_t *pFunctionTable, ref_api_t* 
 #define DEFINE_ENGINE_SHARED_CVAR( x, y ) cvar_t *x = NULL;
 #define DECLARE_ENGINE_SHARED_CVAR( x, y ) extern cvar_t *x;
 #define RETRIEVE_ENGINE_SHARED_CVAR( x, y ) \
-	if(!( x = gEngfuncs.pfnGetCvarPointer( #y, 0 ) )) \
+	if(!( x = gEngfuncs.pfnGetCvarPointer( #y ) )) \
 		gEngfuncs.Host_Error( S_ERROR "engine didn't gave us %s cvar pointer\n", #y );
 #define ENGINE_SHARED_CVAR_NAME( f, x, y ) f( x, y )
 #define ENGINE_SHARED_CVAR( f, x ) ENGINE_SHARED_CVAR_NAME( f, x, x )

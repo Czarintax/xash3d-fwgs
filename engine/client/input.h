@@ -25,12 +25,10 @@ INPUT
 */
 
 #include "keydefs.h"
-#include "usercmd.h"
 
 //
 // input.c
 //
-extern qboolean	in_mouseinitialized;
 void IN_Init( void );
 void Host_InputFrame( void );
 void IN_Shutdown( void );

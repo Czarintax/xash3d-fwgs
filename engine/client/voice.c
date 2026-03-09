@@ -56,7 +56,13 @@ static qboolean Voice_IsGoldSrcMode( const char *codec )
 	// it will send an empty codec
 	// however, decoding is still possible
 	// if the voice data contains Opus
-	return( COM_CheckString( codec ) == 0 || Q_strstr( codec, "voice_speex" ) != NULL );
+	if( COM_StringEmptyOrNULL( codec ))
+		return true;
+
+	if( Q_strstr( codec, "voice_speex" ))
+		return true;
+
+	return false;
 }
 
 /*
@@ -430,7 +436,7 @@ static uint Voice_GetOpusCompressedData( byte *out, uint maxsize, uint *frames )
 	if( voice.input_file )
 	{
 		uint   numbytes;
-		double updateInterval, curtime = Sys_DoubleTime();
+		double updateInterval, curtime = Platform_DoubleTime();
 
 		updateInterval = curtime - voice.start_time;
 		voice.start_time = curtime;
@@ -505,7 +511,7 @@ static uint Voice_GetGSCompressedData( byte *out, uint maxsize, uint *frames )
 	if( voice.input_file )
 	{
 		uint   numbytes;
-		double updateInterval, curtime = Sys_DoubleTime();
+		double updateInterval, curtime = Platform_DoubleTime();
 
 		updateInterval = curtime - voice.start_time;
 		voice.start_time = curtime;
@@ -875,7 +881,7 @@ void Voice_RecordStart( void )
 			Sound_Process( &voice.input_file, voice.samplerate, voice.width, VOICE_PCM_CHANNELS, SOUND_RESAMPLE );
 			voice.input_file_pos = 0;
 
-			voice.start_time = Sys_DoubleTime();
+			voice.start_time = Platform_DoubleTime();
 			voice.is_recording = true;
 		}
 		else

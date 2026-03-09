@@ -19,7 +19,6 @@ GNU General Public License for more details.
 #include "mod_local.h"
 #include "xash3d_mathlib.h"
 #include "world.h"
-#include "eiface.h" // offsetof
 
 #define MAX_CLIPNODE_DEPTH		256	// should never exceeds
 
@@ -707,7 +706,7 @@ static void Mod_CreatePolygonsForHull( int hullnum )
 		Mod_InitDebugHulls( mod ); // FIXME: build hulls for separate bmodels (shells, medkits etc)
 
 	Con_Printf( "generating polygons for hull %u...\n", hullnum );
-	start = Sys_DoubleTime();
+	start = Platform_DoubleTime();
 
 	// rebuild hulls list
 	for( i = 0; i < world.num_hull_models; i++ )
@@ -718,7 +717,7 @@ static void Mod_CreatePolygonsForHull( int hullnum )
 		Q_snprintf( name, sizeof( name ), "*%i", i + 1 );
 		mod = Mod_FindName( name, false );
 	}
-	end = Sys_DoubleTime();
+	end = Platform_DoubleTime();
 	Con_Printf( "build time %.3f secs\n", end - start );
 }
 

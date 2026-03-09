@@ -32,8 +32,12 @@ static byte fatphs[(MAX_MAP_LEAFS+7)/8];
 static byte clientpvs[(MAX_MAP_LEAFS+7)/8];	// for find client in PVS
 
 // exports
+#if XASH_WIN32
 typedef void (__cdecl *LINK_ENTITY_FUNC)( entvars_t *pev );
-typedef void (__stdcall *GIVEFNPTRSTODLL)( enginefuncs_t* engfuncs, globalvars_t *pGlobals );
+#else
+typedef void (*LINK_ENTITY_FUNC)( entvars_t *pev );
+#endif
+typedef void (DLLEXPORT *GIVEFNPTRSTODLL)( enginefuncs_t* engfuncs, globalvars_t *pGlobals );
 
 #ifndef NDEBUG
 qboolean SV_CheckEdict( const edict_t *e, const char *file, const int line )
@@ -260,7 +264,7 @@ void GAME_EXPORT SV_SetModel( edict_t *ent, const char *modelname )
 		return;
 	}
 
-	if( COM_CheckString( name ))
+	if( !COM_StringEmptyOrNULL( name ))
 	{
 		ent->v.model = MAKE_STRING( sv.model_precache[i] );
 		ent->v.modelindex = i;
@@ -742,7 +746,7 @@ void SV_QueueChangeLevel( const char *level, const char *landname )
 	Q_strncpy( mapname, level, sizeof( mapname ));
 	COM_StripExtension( mapname );
 
-	if( COM_CheckString( landname ))
+	if( !COM_StringEmptyOrNULL( landname ))
 		smooth = true;
 
 	flags = SV_MapIsValid( mapname, landname );
@@ -933,7 +937,7 @@ uint SV_MapIsValid( const char *filename, const char *landmark_name )
 		char	token[MAX_TOKEN];
 		string	check_name;
 
-		need_landmark = COM_CheckString( landmark_name );
+		need_landmark = !COM_StringEmptyOrNULL( landmark_name );
 
 		if( !need_landmark )
 		{
@@ -1325,7 +1329,7 @@ static int GAME_EXPORT pfnModelIndex( const char *m )
 	char	name[MAX_QPATH];
 	int	i;
 
-	if( !COM_CheckString( m ))
+	if( COM_StringEmptyOrNULL( m ))
 		return 0;
 
 	if( *m == '\\' || *m == '/' ) m++;
@@ -1383,7 +1387,7 @@ static void GAME_EXPORT pfnChangeLevel( const char *level, const char *landmark 
 	char		landname[MAX_QPATH];
 	char		*text;
 
-	if( !COM_CheckString( level ) || sv.state != ss_active )
+	if( COM_StringEmptyOrNULL( level ) || sv.state != ss_active )
 		return; // ???
 
 	// make sure we don't issue two changelevels
@@ -1396,7 +1400,7 @@ static void GAME_EXPORT pfnChangeLevel( const char *level, const char *landmark 
 	// g-cont. some level-designers wrote landmark name with space
 	// and Cmd_TokenizeString separating all the after space as next argument
 	// emulate this bug for compatibility
-	if( COM_CheckString( landmark ))
+	if( !COM_StringEmptyOrNULL( landmark ))
 	{
 		text = (char *)landname;
 		while( *landmark && ((byte)*landmark) != ' ' )
@@ -1497,7 +1501,7 @@ static edict_t *GAME_EXPORT SV_FindEntityByString( edict_t *pStartEdict, const c
 	edict_t		*ed;
 	const char	*t;
 
-	if( !COM_CheckString( pszValue ))
+	if( COM_StringEmptyOrNULL( pszValue ))
 		return svgame.edicts;
 
 	if( pStartEdict ) e = NUM_FOR_EDICT( pStartEdict );
@@ -1929,6 +1933,8 @@ static int GAME_EXPORT pfnWalkMove( edict_t *ent, float yaw, float dist, int iMo
 		return SV_MoveTest( ent, move, true );
 	case WALKMOVE_CHECKONLY:
 		return SV_MoveStep( ent, move, false);
+	default:
+		Host_Error( "%s: unknown mode %d\n", __func__, iMode );
 	}
 	return 0;
 }
@@ -1984,7 +1990,7 @@ int SV_BuildSoundMsg( sizebuf_t *msg, edict_t *ent, int chan, const char *sample
 		pitch = bound( 0, pitch, 255 );
 	}
 
-	if( !COM_CheckString( sample ))
+	if( COM_StringEmptyOrNULL( sample ))
 	{
 		Con_Reportf( S_ERROR "%s: passed NULL sample\n", __func__ );
 		return 0;
@@ -2556,7 +2562,7 @@ int GAME_EXPORT pfnDecalIndex( const char *m )
 {
 	int	i;
 
-	if( !COM_CheckString( m ))
+	if( COM_StringEmptyOrNULL( m ))
 		return -1;
 
 	for( i = 1; i < MAX_DECALS && host.draw_decals[i][0]; i++ )
@@ -2614,7 +2620,7 @@ static qboolean SV_RewriteMessage( void )
 		else if( idx >= 0 && idx < MAX_SOUNDS )
 			sample = sv.sound_precache[idx];
 
-		if( !COM_CheckString( sample ))
+		if( COM_StringEmptyOrNULL( sample ))
 		{
 			Con_Printf( S_ERROR "%s: unrecognized sample in svc_spawnstaticsound, index %d, flags 0x%x\n", __func__, idx, flags );
 			return false;
@@ -3598,7 +3604,7 @@ static int GAME_EXPORT pfnRegUserMsg( const char *pszName, int iSize )
 {
 	int	i;
 
-	if( !COM_CheckString( pszName ))
+	if( COM_StringEmptyOrNULL( pszName ))
 		return svc_bad;
 
 	if( Q_strlen( pszName ) >= sizeof( svgame.msg[0].name ))
@@ -4159,7 +4165,7 @@ void GAME_EXPORT SV_PlaybackEventFull( int flags, const edict_t *pInvoker, word 
 	}
 
 	// check event for precached
-	if( !COM_CheckString( sv.event_precache[eventindex] ))
+	if( COM_StringEmptyOrNULL( sv.event_precache[eventindex] ))
 	{
 		Con_Printf( S_ERROR "%s: event %i was not precached\n", __func__, eventindex );
 		return;
@@ -4612,7 +4618,7 @@ static void GAME_EXPORT pfnForceUnmodified( FORCE_TYPE type, float *mins, float 
 	consistency_t	*pc;
 	int		i;
 
-	if( !COM_CheckString( filename ))
+	if( COM_StringEmptyOrNULL( filename ))
 		return;
 
 	if( sv.state == ss_loading )
@@ -4710,7 +4716,7 @@ static void GAME_EXPORT pfnQueryClientCvarValue( const edict_t *player, const ch
 {
 	sv_client_t *cl;
 
-	if( !COM_CheckString( cvarName ))
+	if( COM_StringEmptyOrNULL( cvarName ))
 		return;
 
 	if(( cl = SV_ClientFromEdict( player, false )) != NULL )
@@ -4737,7 +4743,7 @@ static void GAME_EXPORT pfnQueryClientCvarValue2( const edict_t *player, const c
 {
 	sv_client_t *cl;
 
-	if( !COM_CheckString( cvarName ))
+	if( COM_StringEmptyOrNULL( cvarName ))
 		return;
 
 	if(( cl = SV_ClientFromEdict( player, false )) != NULL )
@@ -4910,7 +4916,7 @@ static enginefuncs_t gEngfuncs =
 	COM_RandomLong,
 	COM_RandomFloat,
 	pfnSetView,
-	pfnTime,
+	Sys_FloatTime,
 	pfnCrosshairAngle,
 	COM_LoadFileForMe,
 	COM_FreeFile,

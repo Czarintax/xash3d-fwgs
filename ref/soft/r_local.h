@@ -23,14 +23,14 @@ GNU General Public License for more details.
 #include "cl_entity.h"
 #include "render_api.h"
 #include "protocol.h"
-#include "dlight.h"
 #include "ref_api.h"
 #include "xash3d_mathlib.h"
 #include "ref_params.h"
 #include "enginefeatures.h"
 #include "com_strings.h"
-#include "pm_movevars.h"
 #include "cvardef.h"
+#include "pmove.h"
+
 typedef struct mip_s mip_t;
 
 typedef int fixed8_t;
@@ -526,7 +526,6 @@ void GL_InitExtensions( void );
 void GL_ClearExtensions( void );
 void VID_CheckChanges( void );
 int GL_LoadTexture( const char *name, const byte *buf, size_t size, int flags );
-void GL_FreeImage( const char *name );
 qboolean VID_ScreenShot( const char *filename, int shot_type );
 qboolean VID_CubemapShot( const char *base, uint size, const float *vieworg, qboolean skyshot );
 void R_GammaChanged( qboolean do_reset_gamma );

@@ -821,7 +821,6 @@ void SV_SendClientMessages( void )
 {
 	sv_client_t *cl;
 	int          i;
-	double       updaterate_time;
 	double       time_until_next_message;
 
 	if( sv.state == ss_dead )
@@ -892,8 +891,7 @@ void SV_SendClientMessages( void )
 
 			// now that we were able to send, reset timer to point to next possible send time.
 			// check here also because sv_max/minupdaterate could been changed in runtime
-			updaterate_time = bound( 1.0 / sv_maxupdaterate.value, cl->cl_updaterate, 1.0 / sv_minupdaterate.value );
-			cl->next_messagetime = host.realtime + sv.frametime + updaterate_time;
+			cl->next_messagetime = host.realtime + sv.frametime + cl->next_messageinterval;
 			ClearBits( cl->flags, FCL_SEND_NET_MESSAGE );
 
 			// NOTE: we should send frame even if server is not simulated to prevent overflow
@@ -970,7 +968,7 @@ void SV_InactivateClients( void )
 		}
 
 		COM_ClearCustomizationList( &cl->customdata, false );
-		memset( cl->physinfo, 0, MAX_PHYSINFO_STRING );
+		memset( cl->physinfo, 0, sizeof( cl->physinfo ));
 
 		// NOTE: many mods sending messages that must be applied on a next level
 		// e.g. CryOfFear sending HideHud and PlayMp3 that affected after map change

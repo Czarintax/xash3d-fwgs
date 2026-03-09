@@ -13,16 +13,16 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 */
 
+#include "build.h"
 #include <inttypes.h>
-#include "common.h"
 #include <fcntl.h>
 #if !XASH_WIN32
 #include <dirent.h>
 #else
 #include <io.h>
 #endif
-
-static char id_md5[33];
+#include "common.h"
+#include "client.h"
 
 /*
 ==========================================================
@@ -165,6 +165,8 @@ static void ID_VerifyHEX_f( void )
 }
 
 #if XASH_LINUX
+// TODO: do modern Linux even expose CPU serial number?
+// if not, remove this
 static qboolean ID_ProcessCPUInfo( bloomfilter_t *value )
 {
 	int cpuinfofd = open( "/proc/cpuinfo", O_RDONLY );
@@ -174,8 +176,11 @@ static qboolean ID_ProcessCPUInfo( bloomfilter_t *value )
 	if( cpuinfofd < 0 )
 		return false;
 
-	if( (ret = read( cpuinfofd, buffer, 1023 ) ) < 0 )
+	if(( ret = read( cpuinfofd, buffer, sizeof( buffer ) - 1 )) < 0 )
+	{
+		close( cpuinfofd );
 		return false;
+	}
 
 	close( cpuinfofd );
 
@@ -184,15 +189,13 @@ static qboolean ID_ProcessCPUInfo( bloomfilter_t *value )
 	if( !ret )
 		return false;
 
-	pbuf = Q_strstr( buffer, "Serial" );
+	pbuf = Q_stristr( buffer, "Serial" );
 	if( !pbuf )
 		return false;
 	pbuf += 6;
 
-	if( ( pbuf2 = Q_strchr( pbuf, '\n' ) ) )
-		*pbuf2 = 0;
-	else
-		pbuf2 = pbuf + Q_strlen( pbuf );
+	pbuf2 = Q_strchrnul( pbuf, '\n' );
+	*pbuf2 = 0;
 
 	if( !ID_VerifyHEX( pbuf ) )
 		return false;
@@ -302,8 +305,11 @@ static qboolean ID_ProcessFile( bloomfilter_t *value, const char *path )
 	if( fd < 0 )
 		return false;
 
-	if( (ret = read( fd, buffer, 255 ) ) < 0 )
+	if(( ret = read( fd, buffer, sizeof( buffer ) - 1 )) < 0 )
+	{
+		close( fd );
 		return false;
+	}
 
 	close( fd );
 
@@ -471,7 +477,7 @@ static int ID_ProcessWMIC( bloomfilter_t *value, const wchar_t *cmdline )
 		return 0;
 
 	pbuf = COM_ParseFile( buffer, token, sizeof( token )); // Header
-	while( pbuf = COM_ParseFile( pbuf, token, sizeof( token )))
+	while(( pbuf = COM_ParseFile( pbuf, token, sizeof( token ))))
 	{
 		if( !ID_VerifyHEX( token ))
 			continue;
@@ -492,7 +498,7 @@ static int ID_CheckWMIC( bloomfilter_t value, const wchar_t *cmdline )
 		return 0;
 
 	pbuf = COM_ParseFile( buffer, token, sizeof( token )); // Header
-	while( pbuf = COM_ParseFile( pbuf, token, sizeof( token )))
+	while(( pbuf = COM_ParseFile( pbuf, token, sizeof( token ))))
 	{
 		bloomfilter_t filter;
 
@@ -522,7 +528,7 @@ static bloomfilter_t ID_GenerateRawId( void )
 	int count = 0;
 
 #if XASH_LINUX
-#if XASH_ANDROID && !XASH_DEDICATED
+#if XASH_ANDROID
 	{
 		const char *androidid = Android_GetAndroidID();
 		if( androidid && ID_VerifyHEX( androidid ) )
@@ -531,7 +537,11 @@ static bloomfilter_t ID_GenerateRawId( void )
 			count ++;
 		}
 	}
-#endif
+#else // !XASH_ANDROID
+	// most systemd/Linux distros expose this file
+	count += ID_ProcessFile( &value, "/etc/machine-id" );
+#endif // !XASH_ANDROID
+
 	count += ID_ProcessCPUInfo( &value );
 	count += ID_ProcessFiles( &value, "/sys/block", "device/cid" );
 	count += ID_ProcessNetDevices( &value );
@@ -563,7 +573,7 @@ static uint ID_CheckRawId( bloomfilter_t filter )
 	int count = 0;
 
 #if XASH_LINUX
-#if XASH_ANDROID && !XASH_DEDICATED
+#if XASH_ANDROID
 	{
 		const char *androidid = Android_GetAndroidID();
 		if( androidid && ID_VerifyHEX( androidid ) )
@@ -573,7 +583,15 @@ static uint ID_CheckRawId( bloomfilter_t filter )
 			value = 0;
 		}
 	}
-#endif
+#else // !XASH_ANDROID
+	// most systemd/Linux distros expose this file
+	if( ID_ProcessFile( &value, "/etc/machine-id" ))
+	{
+		count += (filter & value) == value;
+		value = 0;
+	}
+
+#endif // !XASH_ANDROID
 	count += ID_CheckNetDevices( filter );
 	count += ID_CheckFiles( filter, "/sys/block", "device/cid" );
 	if( ID_ProcessCPUInfo( &value ) )
@@ -622,7 +640,7 @@ static void ID_Check( void )
 	{
 		id = 0;
 #if 0
-		Msg( "%s: fail %d\n", __func__, weight );
+		Con_Printf( "%s: "S_RED"fail"S_DEFAULT" %d\n", __func__, weight );
 #endif
 		return;
 	}
@@ -630,21 +648,40 @@ static void ID_Check( void )
 	if( ID_CheckRawId( id ) < mincount )
 		id = 0;
 #if 0
-	Msg( "%s: success %d\n", __func__, weight );
+	Con_Printf( "%s: "S_GREEN"success"S_DEFAULT" %d\n", __func__, weight );
 #endif
 }
 
-const char *ID_GetMD5( void )
+void ID_GetMD5ForAddress( char *key, netadr_t adr, size_t size )
 {
-	return id_md5;
+	MD5Context_t ctx;
+	byte buf[32], md5[16];
+	size_t bufsize = 0;
+
+	switch( NET_NetadrType( &adr ))
+	{
+	case NA_IP:
+		memcpy( buf, adr.ip, sizeof( adr.ip ));
+		bufsize = sizeof( adr.ip );
+		break;
+	case NA_IP6:
+		NET_NetadrToIP6Bytes( buf, &adr );
+		bufsize = 16;
+		break;
+	default:
+		break;
+	}
+
+	MD5Init( &ctx );
+	MD5Update( &ctx, (byte *)&id, sizeof( id ));
+	if( bufsize != 0 )
+		MD5Update( &ctx, buf, bufsize );
+	MD5Final( md5, &ctx );
+	Q_strnlwr( MD5_Print( md5 ), key, size );
 }
 
 void ID_Init( void )
 {
-	MD5Context_t hash = { 0 };
-	byte md5[16];
-	int i;
-
 	Cmd_AddRestrictedCommand( "bloomfilter", ID_BloomFilter_f, "print bloomfilter raw value of arguments set");
 	Cmd_AddRestrictedCommand( "verifyhex", ID_VerifyHEX_f, "check if id source seems to be fake" );
 #if XASH_LINUX
@@ -671,7 +708,7 @@ void ID_Init( void )
 #else
 	{
 		const char *home = getenv( "HOME" );
-		if( COM_CheckString( home ) )
+		if( !COM_StringEmptyOrNULL( home ) )
 		{
 			FILE *cfg = fopen( va( "%s/.config/.xash_id", home ), "r" );
 			if( !cfg )
@@ -703,13 +740,6 @@ void ID_Init( void )
 	if( !id )
 		id = ID_GenerateRawId();
 
-	MD5Init( &hash );
-	MD5Update( &hash, (byte *)&id, sizeof( id ) );
-	MD5Final( (byte*)md5, &hash );
-
-	for( i = 0; i < 16; i++ )
-		Q_snprintf( &id_md5[i*2], sizeof( id_md5 ) - i * 2, "%02hhx", md5[i] );
-
 #if XASH_ANDROID && !XASH_DEDICATED
 	Android_SaveID( va("%016"PRIX64, id^SYSTEM_XOR_MASK ) );
 #elif XASH_WIN32
@@ -721,7 +751,7 @@ void ID_Init( void )
 #else
 	{
 		const char *home = getenv( "HOME" );
-		if( COM_CheckString( home ) )
+		if( !COM_StringEmptyOrNULL( home ) )
 		{
 			FILE *cfg = fopen( va( "%s/.config/.xash_id", home ), "w" );
 			if( !cfg )

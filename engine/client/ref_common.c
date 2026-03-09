@@ -111,7 +111,7 @@ void R_SetupSky( const char *name )
 	int i, len;
 	qboolean result;
 
-	if( !COM_CheckString( name ))
+	if( COM_StringEmptyOrNULL( name ))
 	{
 		ref.dllFuncs.R_SetupSky( NULL ); // unload skybox
 		return;
@@ -227,14 +227,15 @@ static model_t *pfnGetDefaultSprite( enum ref_defaultsprite_e spr )
 
 static void *pfnMod_Extradata( int type, model_t *m )
 {
-	switch( type )
+	if( type == mod_alias || type == mod_studio )
 	{
-	case mod_alias: return Mod_AliasExtradata( m );
-	case mod_studio: return Mod_StudioExtradata( m );
-	case mod_sprite: // fallthrough
-	case mod_brush: return NULL;
-	default: Host_Error( "%s: unknown type %d\n", __func__, type );
+		if( m && m->type == type )
+			return m->cache.data;
+		return NULL;
 	}
+	else if( type != mod_sprite && type != mod_brush )
+		Host_Error( "%s: unknown type %d\n", __func__, type );
+
 	return NULL;
 }
 
@@ -313,12 +314,17 @@ static screenfade_t *pfnRefGetScreenFade( void )
 	return &clgame.fade;
 }
 
-static qboolean R_Init_Video_( const int type )
+static qboolean R_Init_Video_( ref_graphic_apis_t type )
 {
-	host.apply_opengl_config = true;
-	Cbuf_AddTextf( "exec %s.cfg\n", ref.dllFuncs.R_GetConfigName());
-	Cbuf_Execute();
-	host.apply_opengl_config = false;
+	const char *config_name = ref.dllFuncs.R_GetConfigName ? ref.dllFuncs.R_GetConfigName() : NULL;
+
+	if( config_name )
+	{
+		host.apply_opengl_config = true;
+		Cbuf_AddTextf( "exec %s.cfg\n", config_name );
+		Cbuf_Execute();
+		host.apply_opengl_config = false;
+	}
 
 	return R_Init_Video( type );
 }
@@ -334,7 +340,7 @@ static const ref_api_t gEngfuncs =
 	pfnEngineGetParm,
 
 	pfnCvar_Get,
-	(void*)Cvar_FindVarExt,
+	(void*)Cvar_FindVar,
 	Cvar_VariableValue,
 	Cvar_VariableString,
 	Cvar_SetValue,
@@ -466,7 +472,8 @@ static void R_UnloadProgs( void )
 	if( !ref.hInstance ) return;
 
 	// deinitialize renderer
-	ref.dllFuncs.R_Shutdown();
+	if (ref.dllFuncs.R_Shutdown)
+		ref.dllFuncs.R_Shutdown();
 
 	Cvar_FullSet( "host_refloaded", "0", FCVAR_READ_ONLY );
 
@@ -627,7 +634,7 @@ static void SetWidthAndHeightFromCommandLine( void )
 	Sys_GetIntFromCmdLine( "-width", &width );
 	Sys_GetIntFromCmdLine( "-height", &height );
 
-	if( width < 1 || height < 1 )
+	if( width < VID_MIN_WIDTH || height < VID_MIN_HEIGHT )
 	{
 		// Not specified or invalid, so don't bother.
 		return;
@@ -639,11 +646,11 @@ static void SetWidthAndHeightFromCommandLine( void )
 static void SetFullscreenModeFromCommandLine( void )
 {
 	if( Sys_CheckParm( "-borderless" ))
-		Cvar_DirectSet( &vid_fullscreen, "2" );
+		Cvar_DirectSetValue( &vid_fullscreen, WINDOW_MODE_BORDERLESS );
 	else if( Sys_CheckParm( "-fullscreen" ))
-		Cvar_DirectSet( &vid_fullscreen, "1" );
+		Cvar_DirectSetValue( &vid_fullscreen, WINDOW_MODE_FULLSCREEN );
 	else if( Sys_CheckParm( "-windowed" ))
-		Cvar_DirectSet( &vid_fullscreen, "0" );
+		Cvar_DirectSetValue( &vid_fullscreen, WINDOW_MODE_WINDOWED );
 }
 
 static void R_CollectRendererNames( void )
@@ -760,7 +767,7 @@ qboolean R_Init( void )
 	if( Sys_GetParmFromCmdLine( "-ref", requested_cmdline ))
 		success = R_LoadRenderer( requested_cmdline, false );
 
-	if( !success && COM_CheckString( r_refdll.string ) && Q_stricmp( requested_cmdline, r_refdll.string ))
+	if( !success && !COM_StringEmptyOrNULL( r_refdll.string ) && Q_stricmp( requested_cmdline, r_refdll.string ))
 	{
 		Q_strncpy( requested_cvar, r_refdll.string, sizeof( requested_cvar ));
 

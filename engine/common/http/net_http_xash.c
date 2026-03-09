@@ -324,7 +324,7 @@ static int HTTP_FileConnect( httpfile_t *file )
 
 	file->blocktime = 0;
 
-	if( !COM_CheckStringEmpty( http_useragent.string ) || !Q_strcmp( http_useragent.string, "xash3d" ))
+	if( COM_StringEmpty( http_useragent.string ) || !Q_strcmp( http_useragent.string, "xash3d" ))
 	{
 		Q_snprintf( useragent, sizeof( useragent ), "%s/%s (%s-%s; build %d; %s)",
 			XASH_ENGINE_NAME, XASH_VERSION, Q_buildos( ), Q_buildarch( ), Q_buildnum( ), g_buildcommit );
@@ -994,17 +994,26 @@ static void HTTP_Download_f( void )
 HTTP_ParseURL
 ==============
 */
-static httpserver_t *HTTP_ParseURL( const char *url )
+static httpserver_t *HTTP_ParseURL( const char *url_ )
 {
 	httpserver_t *server;
 	int i;
+	const char *url = NULL;
 
-	url = Q_strstr( url, "http://" );
+	url = Q_strstr( url_, "http://" );
+
+	if( url )
+		url += 7;
+	else
+	{
+		url = Q_strstr( url_, "https://" );
+		if( url )
+			url += 8;
+	}
 
 	if( !url )
 		return NULL;
 
-	url += 7;
 	server = Z_Calloc( sizeof( httpserver_t ));
 	i = 0;
 

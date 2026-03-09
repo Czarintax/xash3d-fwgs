@@ -23,18 +23,17 @@ GNU General Public License for more details.
 #include "cl_entity.h"
 #include "render_api.h"
 #include "protocol.h"
-#include "dlight.h"
 #include "gl_frustum.h"
 #include "ref_api.h"
 #include "xash3d_mathlib.h"
 #include "ref_params.h"
 #include "enginefeatures.h"
 #include "com_strings.h"
-#include "pm_movevars.h"
 #include "cvardef.h"
 #include "gl_export.h"
 #include "wadfile.h"
 #include "common/mod_local.h"
+#include "pmove.h"
 
 #if XASH_PSVITA
 int VGL_ShimInit( void );
@@ -328,7 +327,7 @@ qboolean R_BeamCull( const vec3_t start, const vec3_t end, qboolean pvsOnly );
 //
 // gl_cull.c
 //
-int R_CullModel( cl_entity_t *e, const vec3_t absmin, const vec3_t absmax );
+qboolean R_CullModel( cl_entity_t *e, const vec3_t absmin, const vec3_t absmax );
 qboolean R_CullBox( const vec3_t mins, const vec3_t maxs );
 int R_CullSurface( msurface_t *surf, gl_frustum_t *frustum, uint clipflags );
 
@@ -347,12 +346,6 @@ void R_ClearDecals( void );
 //
 void R_Set2DMode( qboolean enable );
 void R_UploadStretchRaw( int texture, int cols, int rows, int width, int height, const byte *data );
-
-//
-// gl_drawhulls.c
-//
-void R_DrawWorldHull( void );
-void R_DrawModelHull( void );
 
 //
 // gl_image.c
@@ -426,7 +419,7 @@ void Matrix4x4_CreateModelview( matrix4x4 out );
 //
 // gl_rmisc.c
 //
-void R_ClearStaticEntities( void );
+void R_NewMap( void );
 
 //
 // gl_rsurf.c
@@ -515,7 +508,6 @@ void GL_OnContextCreated( void );
 void GL_InitExtensions( void );
 void GL_ClearExtensions( void );
 int GL_LoadTexture( const char *name, const byte *buf, size_t size, int flags );
-void GL_FreeImage( const char *name );
 qboolean VID_ScreenShot( const char *filename, int shot_type );
 qboolean VID_CubemapShot( const char *base, uint size, const float *vieworg, qboolean skyshot );
 void R_GammaChanged( qboolean do_reset_gamma );
@@ -545,7 +537,6 @@ int R_CreateDecalList( decallist_t *pList );
 void R_ClearAllDecals( void );
 byte *Mod_GetCurrentVis( void );
 void Mod_SetOrthoBounds( const float *mins, const float *maxs );
-void R_NewMap( void );
 void CL_AddCustomBeam( cl_entity_t *pEnvBeam );
 
 //

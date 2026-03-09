@@ -370,7 +370,7 @@ static qboolean Sound_ResampleInternal( wavdata_t *sc, int outrate, int outwidth
 	if( inrate == outrate && inwidth == outwidth && inchannels == outchannels )
 		return false;
 
-	t1 = Sys_DoubleTime();
+	t1 = Platform_DoubleTime();
 
 	stepscale = (double)inrate / outrate;	// this is usually 0.5, 1, or 2
 	outcount = sc->samples / stepscale;
@@ -379,7 +379,7 @@ static qboolean Sound_ResampleInternal( wavdata_t *sc, int outrate, int outwidth
 
 	sc->samples = outcount;
 	if( FBitSet( sc->flags, SOUND_LOOPED ))
-		sc->loopStart = sc->loopStart / stepscale;
+		sc->loop_start = sc->loop_start / stepscale;
 
 	sound.tempbuffer = (byte *)Mem_Realloc( host.soundpool, sound.tempbuffer, sc->size );
 
@@ -404,7 +404,7 @@ static qboolean Sound_ResampleInternal( wavdata_t *sc, int outrate, int outwidth
 		return false;
 	}
 
-	t2 = Sys_DoubleTime();
+	t2 = Platform_DoubleTime();
 	sc->rate = outrate;
 	sc->width = outwidth;
 
@@ -447,7 +447,7 @@ qboolean Sound_Process( wavdata_t **wav, int rate, int width, int channels, uint
 qboolean Sound_SupportedFileFormat( const char *fileext )
 {
 	const loadwavfmt_t *format;
-	if( COM_CheckStringEmpty( fileext ))
+	if( !COM_StringEmpty( fileext ))
 	{
 		for( format = sound.loadformats; format && format->ext; format++ )
 		{

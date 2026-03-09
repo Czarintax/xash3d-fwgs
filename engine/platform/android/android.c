@@ -47,12 +47,6 @@ void Android_Init( void )
 	jni.loadAndroidID = (*jni.env)->GetMethodID( jni.env, jni.actcls, "loadAndroidID", "()Ljava/lang/String;" );
 	jni.getAndroidID = (*jni.env)->GetMethodID( jni.env, jni.actcls, "getAndroidID", "()Ljava/lang/String;" );
 	jni.saveAndroidID = (*jni.env)->GetMethodID( jni.env, jni.actcls, "saveAndroidID", "(Ljava/lang/String;)V" );
-
-	SDL_SetHint( SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight" );
-	SDL_SetHint( SDL_HINT_JOYSTICK_HIDAPI_STEAM, "1" );
-	SDL_SetHint( SDL_HINT_ANDROID_BLOCK_ON_PAUSE, "0" );
-	SDL_SetHint( SDL_HINT_ANDROID_BLOCK_ON_PAUSE_PAUSEAUDIO, "0" );
-	SDL_SetHint( SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1" );
 #endif // !XASH_SDL
 }
 
@@ -87,7 +81,8 @@ const char *Android_GetAndroidID( void )
 	jstring resultJNIStr;
 	const char *resultCStr;
 
-	if( COM_CheckString( id ) ) return id;
+	if( !COM_StringEmpty( id ))
+		return id;
 
 	resultJNIStr = (*jni.env)->CallObjectMethod( jni.env, jni.activity, jni.getAndroidID );
 	resultCStr = (*jni.env)->GetStringUTFChars( jni.env, resultJNIStr, NULL );

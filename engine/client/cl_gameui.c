@@ -41,7 +41,7 @@ void UI_UpdateMenu( float realtime )
 	if( cls.key_dest == key_console ) return;
 
 	// if some deferred cmds is waiting
-	if( UI_IsVisible() && COM_CheckString( host.deferred_cmd ))
+	if( UI_IsVisible() && !COM_StringEmptyOrNULL( host.deferred_cmd ))
 	{
 		Cbuf_AddText( host.deferred_cmd );
 		host.deferred_cmd[0] = '\0';
@@ -517,7 +517,7 @@ static HIMAGE GAME_EXPORT pfnPIC_Load( const char *szPicName, const byte *image_
 {
 	HIMAGE	tx;
 
-	if( !COM_CheckString( szPicName ))
+	if( COM_StringEmptyOrNULL( szPicName ))
 	{
 		Con_Reportf( S_ERROR "%s: refusing to load image with empty name\n", __func__ );
 		return 0;
@@ -713,7 +713,9 @@ pfnPlaySound
 */
 static void GAME_EXPORT pfnPlaySound( const char *szSound )
 {
-	if( !COM_CheckString( szSound )) return;
+	if( COM_StringEmptyOrNULL( szSound ))
+		return;
+
 	S_StartLocalSound( szSound, VOL_NORM, false );
 }
 
@@ -998,7 +1000,7 @@ pfnGetFilesList
 release prev search on a next call
 =========
 */
-static char ** GAME_EXPORT pfnGetFilesList( const char *pattern, int *numFiles, int gamedironly )
+char **GAME_EXPORT CL_GetFilesList( const char *pattern, int *numFiles, int gamedironly )
 {
 	static search_t	*t = NULL;
 
@@ -1238,7 +1240,7 @@ static const ui_enginefuncs_t gEngfuncs =
 	pfnMemFree,
 	pfnGetOldGameInfo,
 	pfnGetGamesList,
-	pfnGetFilesList,
+	CL_GetFilesList,
 	SV_GetSaveComment,
 	CL_GetDemoComment,
 	pfnCheckGameDll,

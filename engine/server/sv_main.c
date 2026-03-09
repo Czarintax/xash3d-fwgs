@@ -34,10 +34,10 @@ CVAR_DEFINE_AUTO( rcon_enable, "1", FCVAR_PROTECTED, "enable accepting remote co
 CVAR_DEFINE_AUTO( sv_cheats, "0", FCVAR_SERVER, "allow cheats on server" );
 CVAR_DEFINE_AUTO( sv_instancedbaseline, "1", 0, "allow to use instanced baselines to saves network overhead" );
 static CVAR_DEFINE_AUTO( sv_contact, "", FCVAR_ARCHIVE|FCVAR_SERVER, "server techincal support contact address or web-page" );
-CVAR_DEFINE_AUTO( sv_minupdaterate, "25.0", FCVAR_ARCHIVE, "minimal value for 'cl_updaterate' window" );
-CVAR_DEFINE_AUTO( sv_maxupdaterate, "60.0", FCVAR_ARCHIVE, "maximal value for 'cl_updaterate' window" );
+CVAR_DEFINE_AUTO( sv_minupdaterate, "10.0", FCVAR_ARCHIVE, "minimal value for 'cl_updaterate' window, 0 == unlimited" );
+CVAR_DEFINE_AUTO( sv_maxupdaterate, "60.0", FCVAR_ARCHIVE, "maximal value for 'cl_updaterate' window, 0 == unlimited" );
 CVAR_DEFINE_AUTO( sv_minrate, "5000", FCVAR_SERVER, "min bandwidth rate allowed on server, 0 == unlimited" );
-CVAR_DEFINE_AUTO( sv_maxrate, "50000", FCVAR_SERVER, "max bandwidth rate allowed on server, 0 == unlimited" );
+CVAR_DEFINE_AUTO( sv_maxrate, "0", FCVAR_SERVER, "max bandwidth rate allowed on server, 0 == unlimited" );
 // TODO: CVAR_DEFINE_AUTO( sv_logrelay, "0", FCVAR_ARCHIVE, "allow log messages from remote machines to be logged on this server" );
 CVAR_DEFINE_AUTO( sv_newunit, "0", 0, "clear level-saves from previous SP game chapter to help keep .sav file size as minimum" );
 CVAR_DEFINE_AUTO( sv_clienttrace, "1", FCVAR_SERVER, "0 = big box(Quake), 0.5 = halfsize, 1 = normal (100%), otherwise it's a scaling factor" );
@@ -223,12 +223,12 @@ void SV_UpdateMovevars( qboolean initialize )
 	svgame.movevars.footsteps = sv_footsteps.value;
 	svgame.movevars.rollangle = sv_rollangle.value;
 	svgame.movevars.rollspeed = sv_rollspeed.value;
-	svgame.movevars.skycolor_r = sv_skycolor_r.value;
-	svgame.movevars.skycolor_g = sv_skycolor_g.value;
-	svgame.movevars.skycolor_b = sv_skycolor_b.value;
-	svgame.movevars.skyvec_x = sv_skyvec_x.value;
-	svgame.movevars.skyvec_y = sv_skyvec_y.value;
-	svgame.movevars.skyvec_z = sv_skyvec_z.value;
+	svgame.movevars.skycolor[0] = sv_skycolor_r.value;
+	svgame.movevars.skycolor[1] = sv_skycolor_g.value;
+	svgame.movevars.skycolor[2] = sv_skycolor_b.value;
+	svgame.movevars.skyvec[0] = sv_skyvec_x.value;
+	svgame.movevars.skyvec[1] = sv_skyvec_y.value;
+	svgame.movevars.skyvec[2] = sv_skyvec_z.value;
 	svgame.movevars.wateralpha = sv_wateralpha.value;
 	svgame.movevars.features = host.features; // just in case. not really need
 	svgame.movevars.entgravity = 1.0f;
@@ -866,7 +866,6 @@ void SV_Init( void )
 
 	Cvar_Getf( "protocol", FCVAR_READ_ONLY, "displays server protocol version", "%i", PROTOCOL_VERSION );
 	Cvar_Get( "suitvolume", "0.25", FCVAR_ARCHIVE, "HEV suit volume" );
-	Cvar_Get( "sv_background", "0", FCVAR_READ_ONLY, "indicate what background map is running" );
 	Cvar_Get( "gamedir", GI->gamefolder, FCVAR_READ_ONLY, "game folder" );
 	Cvar_Get( "sv_alltalk", "1", 0, "allow to talking for all players (legacy, unused)" );
 	Cvar_Get( "sv_allow_PhysX", "1", FCVAR_ARCHIVE, "allow XashXT to usage PhysX engine" );			// XashXT cvar
@@ -1035,7 +1034,7 @@ void SV_FinalMessage( const char *message, qboolean reconnect )
 
 	MSG_Init( &msg, "FinalMessage", msg_buf, sizeof( msg_buf ));
 
-	if( COM_CheckString( message ))
+	if( !COM_StringEmptyOrNULL( message ))
 	{
 		MSG_BeginServerCmd( &msg, svc_print );
 		MSG_WriteString( &msg, message );
@@ -1115,9 +1114,9 @@ void SV_Shutdown( const char *finalmsg )
 	}
 
 	// don't forget to reset sv_background state
-	Cvar_FullSet( "sv_background", "0", FCVAR_READ_ONLY );
+	Cvar_DirectFullSet( &sv_background, "0", FCVAR_READ_ONLY );
 
-	if( COM_CheckString( finalmsg ))
+	if( !COM_StringEmptyOrNULL( finalmsg ))
 		Con_Printf( "%s", finalmsg );
 
 	// rcon will be disconnected

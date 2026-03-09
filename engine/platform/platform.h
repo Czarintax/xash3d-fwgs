@@ -314,15 +314,17 @@ typedef enum
 	rserr_ok,
 	rserr_invalid_fullscreen,
 	rserr_invalid_mode,
+	rserr_invalid_context,
 	rserr_unknown
 } rserr_t;
 
 struct vidmode_s;
 typedef enum window_mode_e window_mode_t;
 typedef enum ref_window_type_e ref_window_type_t;
+typedef enum ref_graphic_apis_e ref_graphic_apis_t;
 
 // Window
-qboolean  R_Init_Video( const int type );
+qboolean  R_Init_Video( ref_graphic_apis_t type );
 void      R_Free_Video( void );
 qboolean  VID_SetMode( void );
 rserr_t   R_ChangeDisplaySettings( int width, int height, window_mode_t window_mode );
@@ -338,6 +340,7 @@ void SW_UnlockBuffer( void );
 qboolean SW_CreateBuffer( int width, int height, uint *stride, uint *bpp, uint *r, uint *g, uint *b );
 void Platform_Minimize_f( void );
 ref_window_type_t R_GetWindowHandle( void **handle, ref_window_type_t type );
+void VID_Info_f( void );
 
 //
 // in_evdev.c

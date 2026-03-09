@@ -15,7 +15,6 @@ GNU General Public License for more details.
 
 #include <math.h>
 #include "imagelib.h"
-#include "eiface.h" // ARRAYSIZE
 
 #define DEBUG_LOOKUPS_COUNT 0
 #define USE_FS_SEARCH_FOR_LOOKUPS 1
@@ -117,7 +116,7 @@ static void Image_ReportLookupsCount( const char *name )
 
 static void Image_IncrementLookupTime( void )
 {
-	double t = Sys_DoubleTime();
+	double t = Platform_DoubleTime();
 	double dt = t - g_lookup_start;
 
 	g_lookup_time += dt;
@@ -125,7 +124,7 @@ static void Image_IncrementLookupTime( void )
 	g_lookups++;
 	g_lookups_total++;
 
-	g_lookup_start = Sys_DoubleTime();
+	g_lookup_start = Platform_DoubleTime();
 }
 #else
 static void Image_ReportLookupsCount( const char *name )
@@ -164,7 +163,7 @@ void Image_Reset( void )
 #if DEBUG_LOOKUPS_COUNT
 	g_lookups = 0;
 	g_lookup_time = 0.0f;
-	g_lookup_start = Sys_DoubleTime();
+	g_lookup_start = Platform_DoubleTime();
 #endif // DEBUG_LOOKUPS_COUNT
 }
 
@@ -268,7 +267,7 @@ static const loadpixformat_t *Image_GetLoadFormatForExtension( const char *ext )
 {
 	const loadpixformat_t *format;
 
-	if( !COM_CheckStringEmpty( ext ))
+	if( COM_StringEmpty( ext ))
 		return NULL;
 
 	for( format = image.loadformats; format->ext; format++ )
@@ -503,7 +502,7 @@ writes image as any known format
 qboolean FS_SaveImage( const char *filename, rgbdata_t *pix )
 {
 	const char	*ext = COM_FileExtension( filename );
-	qboolean		anyformat = !COM_CheckStringEmpty( ext );
+	qboolean		anyformat = COM_StringEmpty( ext );
 	string		path, savename;
 	const savepixformat_t *format;
 

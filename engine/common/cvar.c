@@ -16,7 +16,6 @@ GNU General Public License for more details.
 #include <math.h>	// fabs...
 #include "common.h"
 #include "base_cmd.h"
-#include "eiface.h" // ARRAYSIZE
 
 static convar_t	*cvar_vars = NULL; // head of list
 static poolhandle_t cvar_pool;
@@ -69,29 +68,18 @@ Cvar_FindVar
 find the specified variable by name
 ============
 */
-convar_t *Cvar_FindVarExt( const char *var_name, int ignore_group )
+convar_t *Cvar_FindVar( const char *var_name )
 {
 	convar_t *var;
 
 	if( !var_name )
 		return NULL;
 
-#if defined(XASH_HASHED_VARS) // TODO: ignore_group
 	var = BaseCmd_Find( HM_CVAR, var_name );
-#else
-	for( var = cvar_vars; var; var = var->next )
-	{
-		if( ignore_group && FBitSet( ignore_group, var->flags ))
-			continue;
-
-		if( !Q_stricmp( var_name, var->name ))
-			return var;
-	}
-#endif
 
 	// HACKHACK: HL25 compatibility
 	if( !var && !Q_stricmp( var_name, "gl_widescreen_yfov" ))
-		var = Cvar_FindVarExt( "r_adjust_fov", ignore_group );
+		var = Cvar_FindVar( "r_adjust_fov" );
 
 	return var;
 }
@@ -231,7 +219,7 @@ static const char *Cvar_ValidateString( convar_t *var, const char *value )
 		pszValue = szNew;
 
 		// g-cont. is this even need?
-		if( !COM_CheckStringEmpty( szNew ) ) Q_strncpy( szNew, "empty", sizeof( szNew ));
+		if( COM_StringEmpty( szNew ) ) Q_strncpy( szNew, "empty", sizeof( szNew ));
 	}
 
 	if( FBitSet( var->flags, FCVAR_NOEXTRAWHITESPACE ))
@@ -319,9 +307,7 @@ static int Cvar_UnlinkVar( const char *var_name, uint32_t group )
 			continue;
 		}
 
-#if defined(XASH_HASHED_VARS)
 		BaseCmd_Remove( HM_CVAR, var->name );
-#endif
 
 		// unlink variable from list
 		*prev = var->next;
@@ -407,18 +393,20 @@ The flags will be or'ed in if the variable exists.
 */
 convar_t *Cvar_Get( const char *name, const char *value, uint32_t flags, const char *var_desc )
 {
-	convar_t	*cur, *find, *var;
+	convar_t *cur, *find, *var;
+	cmd_t *cmd;
+	cmdalias_t *alias;
 
 	ASSERT( name && *name );
 
+	BaseCmd_FindAll( name, &cmd, &alias, &var );
+
 	// check for command coexisting
-	if( Cmd_Exists( name ))
+	if( cmd )
 	{
 		Con_DPrintf( S_ERROR "can't register variable '%s', is already defined as command\n", name );
 		return NULL;
 	}
-
-	var = Cvar_FindVar( name );
 
 	if( var )
 	{
@@ -429,7 +417,7 @@ convar_t *Cvar_Get( const char *name, const char *value, uint32_t flags, const c
 			// which executed from the config file. So we don't need to
 			// change value here: we *already* have actual value from config.
 			// in other cases we need to rewrite them
-			if( COM_CheckStringEmpty( var->desc ))
+			if( !COM_StringEmpty( var->desc ))
 			{
 				// directly set value
 				size_t len = Q_strlen( value ) + 1;
@@ -485,10 +473,8 @@ convar_t *Cvar_Get( const char *name, const char *value, uint32_t flags, const c
 	// tell engine about changes
 	Cvar_Changed( var );
 
-#if defined(XASH_HASHED_VARS)
 	// add to map
 	BaseCmd_Insert( HM_CVAR, var, var->name );
-#endif
 
 	return var;
 }
@@ -519,12 +505,14 @@ Adds a freestanding variable to the variable list.
 */
 void Cvar_RegisterVariable( convar_t *var )
 {
-	convar_t	*cur, *find, *dup;
+	convar_t *cur, *find, *dup;
+	cmd_t *cmd;
+	cmdalias_t *alias;
 
 	ASSERT( var != NULL );
 
 	// first check to see if it has allready been defined
-	dup = Cvar_FindVar( var->name );
+	BaseCmd_FindAll( var->name, &cmd, &alias, &dup );
 
 	if( dup )
 	{
@@ -539,7 +527,7 @@ void Cvar_RegisterVariable( convar_t *var )
 	}
 
 	// check for overlap with a command
-	if( Cmd_Exists( var->name ))
+	if( cmd )
 	{
 		Con_DPrintf( S_ERROR "can't register variable '%s', is already defined as command\n", var->name );
 		return;
@@ -571,10 +559,8 @@ void Cvar_RegisterVariable( convar_t *var )
 	// tell engine about changes
 	Cvar_Changed( var );
 
-#if defined(XASH_HASHED_VARS)
 	// add to map
 	BaseCmd_Insert( HM_CVAR, var, var->name );
-#endif
 }
 
 static qboolean Cvar_CanSet( const convar_t *cv )
@@ -600,6 +586,42 @@ static qboolean Cvar_CanSet( const convar_t *cv )
 
 /*
 ============
+Cvar_DirectFullSet
+
+can set any protected cvars
+============
+*/
+void Cvar_DirectFullSet( convar_t *var, const char *value, uint32_t flags )
+{
+	size_t len = Q_strlen( value ) + 1;
+
+	var->string = Mem_Realloc( cvar_pool, var->string, len );
+	Q_strncpy( var->string, value, len );
+	var->value = Q_atof( var->string );
+	SetBits( var->flags, flags );
+
+	// tell engine about changes
+	Cvar_Changed( var );
+}
+
+static void Cvar_SanitizeAndSet( convar_t *var, const char *value )
+{
+	const char *fixed_string = Cvar_ValidateString( var, value );
+
+	// nothing to change
+	if( !Q_strcmp( fixed_string, var->string ))
+		return;
+
+	// fill it cls.userinfo, svs.serverinfo
+	if( !Cvar_UpdateInfo( var, fixed_string, true ))
+		return;
+
+	// and finally change the cvar itself
+	Cvar_DirectFullSet( var, fixed_string, var->flags );
+}
+
+/*
+============
 Cvar_Set2
 ============
 */
@@ -608,8 +630,6 @@ static convar_t *Cvar_Set2( const char *var_name, const char *value )
 	convar_t	*var;
 	qboolean	dll_variable = false;
 	qboolean	force = false;
-	const char *fixed_string;
-	size_t fixed_string_len;
 
 	if( !Cvar_ValidateVarName( var_name, false ))
 	{
@@ -673,24 +693,7 @@ static convar_t *Cvar_Set2( const char *var_name, const char *value )
 			return var;
 	}
 
-	fixed_string = Cvar_ValidateString( var, value );
-
-	// nothing to change
-	if( !Q_strcmp( fixed_string, var->string ))
-		return var;
-
-	// fill it cls.userinfo, svs.serverinfo
-	if( !Cvar_UpdateInfo( var, fixed_string, true ))
-		return var;
-
-	// and finally change the cvar itself
-	fixed_string_len = Q_strlen( fixed_string ) + 1;
-	var->string = Mem_Realloc( cvar_pool, var->string, fixed_string_len );
-	Q_strncpy( var->string, fixed_string, fixed_string_len );
-	var->value = Q_atof( var->string );
-
-	// tell engine about changes
-	Cvar_Changed( var );
+	Cvar_SanitizeAndSet( var, value );
 	return var;
 }
 
@@ -703,9 +706,6 @@ way to change value for many cvars
 */
 void GAME_EXPORT Cvar_DirectSet( convar_t *var, const char *value )
 {
-	const char *fixed_string;
-	size_t fixed_string_len;
-
 	if( unlikely( !var )) return;	// ???
 
 	// lookup for registration
@@ -734,24 +734,7 @@ void GAME_EXPORT Cvar_DirectSet( convar_t *var, const char *value )
 		value = var->def_string; // reset to default value
 	}
 
-	fixed_string = Cvar_ValidateString( var, value );
-
-	// nothing to change
-	if( !Q_strcmp( fixed_string, var->string ))
-		return;
-
-	// fill it cls.userinfo, svs.serverinfo
-	if( !Cvar_UpdateInfo( var, fixed_string, true ))
-		return;
-
-	// and finally change the cvar itself
-	fixed_string_len = Q_strlen( fixed_string ) + 1;
-	var->string = Mem_Realloc( cvar_pool, var->string, fixed_string_len );
-	Q_strncpy( var->string, fixed_string, fixed_string_len );
-	var->value = Q_atof( var->string );
-
-	// tell engine about changes
-	Cvar_Changed( var );
+	Cvar_SanitizeAndSet( var, value );
 }
 
 /*
@@ -782,7 +765,6 @@ can set any protected cvars
 void Cvar_FullSet( const char *var_name, const char *value, uint32_t flags )
 {
 	convar_t *var = Cvar_FindVar( var_name );
-	size_t len = Q_strlen( value ) + 1;
 
 	if( !var )
 	{
@@ -790,13 +772,7 @@ void Cvar_FullSet( const char *var_name, const char *value, uint32_t flags )
 		return;
 	}
 
-	var->string = Mem_Realloc( cvar_pool, var->string, len );
-	Q_strncpy( var->string, value, len );
-	var->value = Q_atof( var->string );
-	SetBits( var->flags, flags );
-
-	// tell engine about changes
-	Cvar_Changed( var );
+	Cvar_DirectFullSet( var, value, var->flags );
 }
 
 /*
@@ -1030,11 +1006,6 @@ qboolean Cvar_CommandWithPrivilegeCheck( convar_t *v, qboolean isPrivileged )
 		return true;
 	}
 
-#if !defined( XASH_HASHED_VARS )
-	// check variables
-	v = Cvar_FindVar( Cmd_Argv( 0 ));
-#endif
-
 	if( !v )
 		return false;
 
@@ -1046,12 +1017,6 @@ qboolean Cvar_CommandWithPrivilegeCheck( convar_t *v, qboolean isPrivileged )
 		else Con_Printf( "\"%s\" is \"%s\"\n", v->name, v->string );
 
 		return true;
-	}
-
-	if( host.apply_game_config )
-	{
-		if( !FBitSet( v->flags, FCVAR_EXTDLL ))
-			return true; // only game.dll cvars passed
 	}
 
 	if( FBitSet( v->flags, FCVAR_SPONLY ) && CL_GetMaxClients() > 1 )
@@ -1144,24 +1109,6 @@ static void Cvar_Set_f( void )
 	}
 
 	Cvar_Set2( Cmd_Argv( 1 ), combined );
-}
-
-/*
-============
-Cvar_SetGL_f
-
-As Cvar_Set, but also flags it as glconfig
-============
-*/
-static void Cvar_SetGL_f( void )
-{
-	if( Cmd_Argc() != 3 )
-	{
-		Con_Printf( S_USAGE "setgl <variable> <value>\n" );
-		return;
-	}
-
-	Cvar_SetGL( Cmd_Argv( 1 ), Cmd_Argv( 2 ) );
 }
 
 /*
@@ -1354,7 +1301,6 @@ void Cvar_Init( void )
 	Cvar_RegisterVariable( &cmd_scripting );
 	Cvar_RegisterVariable( &host_developer ); // early registering for dev
 	Cvar_RegisterVariable( &cl_filterstuffcmd );
-	Cmd_AddRestrictedCommand( "setgl", Cvar_SetGL_f, "change the value of a opengl variable" );	// OBSOLETE
 	Cmd_AddRestrictedCommand( "toggle", Cvar_Toggle_f, "toggles a console variable's values (use for more info)" );
 	Cmd_AddRestrictedCommand( "reset", Cvar_Reset_f, "reset any type variable to initial value" );
 	Cmd_AddCommand( "set", Cvar_Set_f, "create or change the value of a console variable" );

@@ -55,14 +55,36 @@ static void Mod_Modellist_f( void )
 
 	for( i = nummodels = 0, mod = mod_known; i < mod_numknown; i++, mod++ )
 	{
-		if( !COM_CheckStringEmpty( mod->name ) )
+		const char *color_str;
+
+		if( mod->needload == NL_UNREFERENCED )
 			continue; // free slot
-		Con_Printf( "%s\n", mod->name );
+
+		switch( mod->type )
+		{
+		case mod_alias:
+			color_str = S_YELLOW;
+			break;
+		case mod_studio:
+			color_str = S_GREEN;
+			break;
+		case mod_sprite:
+			color_str = S_MAGENTA;
+			break;
+		case mod_brush:
+			color_str = mod->name[0] == '*' ? S_CYAN : S_BLUE;
+			break;
+		default:
+			color_str = S_RED;
+			break;
+		}
+
+		Con_Printf( "%3d:\t%s%s\n" S_DEFAULT, i, color_str, mod->name );
 		nummodels++;
 	}
 
 	Con_Printf( "-----------------------------------\n" );
-	Con_Printf( "%i total models\n", nummodels );
+	Con_Printf( "%i total models, %i total allocated slots\n", nummodels, mod_numknown );
 	Con_Printf( "\n" );
 }
 
@@ -74,7 +96,7 @@ Mod_FreeUserData
 static void Mod_FreeUserData( model_t *mod )
 {
 	// ignore submodels and freed models
-	if( !COM_CheckStringEmpty( mod->name ) || mod->name[0] == '*' )
+	if( mod->needload == NL_UNREFERENCED || mod->name[0] == '*' )
 		return;
 
 	if( Host_IsDedicated() )
@@ -101,7 +123,7 @@ Mod_FreeModel
 void Mod_FreeModel( model_t *mod )
 {
 	// already freed?
-	if( !mod || !COM_CheckStringEmpty( mod->name ) )
+	if( !mod || mod->needload == NL_UNREFERENCED )
 		return;
 
 	if( mod->type != mod_brush || mod->name[0] != '*' )
@@ -222,7 +244,8 @@ model_t *Mod_FindName( const char *filename, qboolean trackCRC )
 		{
 			if( mod->mempool || mod->name[0] == '*' )
 				mod->needload = NL_PRESENT;
-			else mod->needload = NL_NEEDS_LOADED;
+			else
+				mod->needload = NL_NEEDS_LOADED;
 
 			return mod;
 		}
@@ -230,7 +253,10 @@ model_t *Mod_FindName( const char *filename, qboolean trackCRC )
 
 	// find a free model slot spot
 	for( i = 0, mod = mod_known; i < mod_numknown; i++, mod++ )
-		if( !COM_CheckStringEmpty( mod->name ) ) break; // this is a valid spot
+	{
+		if( mod->needload == NL_UNREFERENCED )
+			break; // this is a valid spot
+	}
 
 	if( i == mod_numknown )
 	{
@@ -264,7 +290,11 @@ model_t *Mod_LoadModel( model_t *mod, qboolean crash )
 	byte		*buf;
 	model_info_t	*p;
 
-	ASSERT( mod != NULL );
+	if( !mod )
+	{
+		Host_Error( "%s: mod == NULL\n", __func__ );
+		return NULL;
+	}
 
 	// check if already loaded (or inline bmodel)
 	if( mod->mempool || mod->name[0] == '*' )
@@ -273,7 +303,11 @@ model_t *Mod_LoadModel( model_t *mod, qboolean crash )
 		return mod;
 	}
 
-	ASSERT( mod->needload == NL_NEEDS_LOADED );
+	if( mod->needload != NL_NEEDS_LOADED )
+	{
+		Host_Error( "%s: trying to load model not marked for loading (%d)\n", __func__, mod->needload );
+		return NULL;
+	}
 
 	// store modelname to show error
 	Q_strncpy( tempname, mod->name, sizeof( tempname ));
@@ -364,7 +398,7 @@ model_t *Mod_LoadModel( model_t *mod, qboolean crash )
 
 	if( FBitSet( p->flags, FCRC_SHOULD_CHECKSUM ))
 	{
-		CRC32_t	currentCRC;
+		uint32_t currentCRC;
 
 		CRC32_Init( &currentCRC );
 		CRC32_ProcessBuffer( &currentCRC, buf, length );
@@ -397,7 +431,7 @@ model_t *Mod_ForName( const char *name, qboolean crash, qboolean trackCRC )
 {
 	model_t	*mod;
 
-	if( !COM_CheckString( name ))
+	if( COM_StringEmptyOrNULL( name ))
 		return NULL;
 
 	mod = Mod_FindName( name, trackCRC );
@@ -427,11 +461,16 @@ static void Mod_PurgeStudioCache( void )
 	// and clear studio sequences
 	for( i = 1; i < mod_numknown; i++ )
 	{
+		if( mod_known[i].needload == NL_UNREFERENCED )
+			continue;
+
 		if( mod_known[i].type == mod_studio )
 			mod_known[i].submodels = NULL;
+
 		if( mod_known[i].name[0] == '*' )
 			Mod_FreeModel( &mod_known[i] );
-		mod_known[i].needload = NL_UNREFERENCED;
+		else
+			mod_known[i].needload = NL_FREE_UNUSED;
 	}
 
 	Mem_EmptyPool( com_studiocache );
@@ -482,7 +521,7 @@ void Mod_FreeUnused( void )
 	// never tries to release worldmodel
 	for( i = 1, mod = &mod_known[1]; i < mod_numknown; i++, mod++ )
 	{
-		if( mod->needload == NL_UNREFERENCED && COM_CheckString( mod->name ))
+		if( mod->needload == NL_FREE_UNUSED )
 			Mod_FreeModel( mod );
 	}
 }
@@ -500,13 +539,15 @@ Mod_Calloc
 
 ===============
 */
-void *Mod_Calloc( int number, size_t size )
+void *GAME_EXPORT Mod_Calloc( int number, size_t size )
 {
 	cache_user_t	*cu;
 
-	if( number <= 0 || size <= 0 ) return NULL;
+	if( number <= 0 || size <= 0 )
+		return NULL;
+
 	cu = (cache_user_t *)Mem_Calloc( com_studiocache, sizeof( cache_user_t ) + number * size );
-	cu->data = (void *)cu; // make sure what cu->data is not NULL
+	cu->data = (void *)cu; // make sure that cu->data is not NULL
 
 	return cu;
 }
@@ -517,9 +558,15 @@ Mod_CacheCheck
 
 ===============
 */
-void *Mod_CacheCheck( cache_user_t *c )
+void *GAME_EXPORT Mod_CacheCheck( cache_user_t *c )
 {
-	return Cache_Check( com_studiocache, c );
+	if( !c->data )
+		return NULL;
+
+	if( !Mem_IsAllocatedExt( com_studiocache, c->data ))
+		return NULL;
+
+	return c->data;
 }
 
 /*
@@ -528,7 +575,7 @@ Mod_LoadCacheFile
 
 ===============
 */
-void Mod_LoadCacheFile( const char *filename, cache_user_t *cu )
+void GAME_EXPORT Mod_LoadCacheFile( const char *filename, cache_user_t *cu )
 {
 	char	modname[MAX_QPATH];
 	fs_offset_t	size;
@@ -536,7 +583,7 @@ void Mod_LoadCacheFile( const char *filename, cache_user_t *cu )
 
 	Assert( cu != NULL );
 
-	if( !COM_CheckString( filename ))
+	if( COM_StringEmptyOrNULL( filename ))
 		return;
 
 	Q_strncpy( modname, filename, sizeof( modname ));
@@ -550,38 +597,12 @@ void Mod_LoadCacheFile( const char *filename, cache_user_t *cu )
 }
 
 /*
-===============
-Mod_AliasExtradata
-
-===============
-*/
-void *Mod_AliasExtradata( model_t *mod )
-{
-	if( mod && mod->type == mod_alias )
-		return mod->cache.data;
-	return NULL;
-}
-
-/*
-===============
-Mod_StudioExtradata
-
-===============
-*/
-void *Mod_StudioExtradata( model_t *mod )
-{
-	if( mod && mod->type == mod_studio )
-		return mod->cache.data;
-	return NULL;
-}
-
-/*
 ==================
 Mod_ValidateCRC
 
 ==================
 */
-qboolean Mod_ValidateCRC( const char *name, CRC32_t crc )
+qboolean Mod_ValidateCRC( const char *name, uint32_t crc )
 {
 	model_info_t	*p;
 	model_t		*mod;

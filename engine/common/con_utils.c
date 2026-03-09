@@ -16,7 +16,6 @@ GNU General Public License for more details.
 #include "common.h"
 #include "client.h"
 #include "const.h"
-#include "kbutton.h"
 
 #define CON_MAXCMDS		4096	// auto-complete intermediate list
 
@@ -679,7 +678,7 @@ static qboolean Cmd_GetCommandsAndCvarsList( const char *s, char *completedname,
 	while( *list.completionString && (*list.completionString == '\\' || *list.completionString == '/') )
 		list.completionString++;
 
-	if( !COM_CheckStringEmpty( list.completionString ) )
+	if( COM_StringEmpty( list.completionString ) )
 		return false;
 
 	// find matching commands and variables
@@ -949,7 +948,7 @@ static qboolean Cmd_CheckMapsList_R( qboolean fRefresh, qboolean onlyingamedir )
 
 	buffersize = t->numfilenames * 2 * sizeof( result );
 	buffer = Mem_Calloc( host.mempool, buffersize );
-	use_filter = COM_CheckStringEmpty( GI->mp_filter ) ? true : false;
+	use_filter = !COM_StringEmpty( GI->mp_filter );
 
 	for( i = 0; i < t->numfilenames; i++ )
 	{
@@ -1165,7 +1164,8 @@ static void Con_PrintCmdMatches( const char *s, const char *unused1, const char 
 {
 	if( !Q_strnicmp( s, con.shortestMatch, Q_strlen( con.shortestMatch ) ) )
 	{
-		if( COM_CheckString( m ) ) Con_Printf( "    %s ^3\"%s\"\n", s, m );
+		if( !COM_StringEmptyOrNULL( m ) )
+			Con_Printf( "    %s ^3\"%s\"\n", s, m );
 		else Con_Printf( "    %s\n", s ); // variable or command without description
 	}
 }
@@ -1179,7 +1179,8 @@ static void Con_PrintCvarMatches( const char *s, const char *value, const char *
 {
 	if( !Q_strnicmp( s, con.shortestMatch, Q_strlen( con.shortestMatch ) ) )
 	{
-		if( COM_CheckString( m ) ) Con_Printf( "    %s (%s)   ^3\"%s\"\n", s, value, m );
+		if( !COM_StringEmptyOrNULL( m ))
+			Con_Printf( "    %s (%s)   ^3\"%s\"\n", s, value, m );
 		else Con_Printf( "    %s  (%s)\n", s, value ); // variable or command without description
 	}
 }
@@ -1251,7 +1252,7 @@ void Con_CompleteCommand( field_t *field, qboolean print_suggestions )
 	while( *con.completionString && (*con.completionString == '\\' || *con.completionString == '/') )
 		con.completionString++;
 
-	if( !COM_CheckStringEmpty( con.completionString ) )
+	if( COM_StringEmpty( con.completionString ) )
 		return;
 
 	// free the old autocomplete list
@@ -1284,7 +1285,7 @@ void Con_CompleteCommand( field_t *field, qboolean print_suggestions )
 		while( *con.completionBuffer && (*con.completionBuffer == '\\' || *con.completionBuffer == '/') )
 			con.completionBuffer++;
 
-		if( !COM_CheckStringEmpty( con.completionBuffer ) )
+		if( COM_StringEmpty( con.completionBuffer ) )
 			return;
 
 		if( Cmd_AutocompleteName( con.completionBuffer, Cmd_Argc() - 1, filename, sizeof( filename ), print_suggestions ))
@@ -1408,7 +1409,7 @@ with the archive flag set to true.
 */
 static void Cmd_WriteOpenGLCvar( const char *name, const char *string, const char *desc, void *f )
 {
-	if( !COM_CheckString( desc ))
+	if( COM_StringEmptyOrNULL( desc ))
 		return; // ignore cvars without description (fantom variables)
 	FS_Printf( f, "%s \"%s\"\n", name, string );
 }
@@ -1417,7 +1418,7 @@ static void Cmd_WriteHelp(const char *name, const char *unused, const char *desc
 {
 	int	length;
 
-	if( !COM_CheckString( desc ))
+	if( COM_StringEmptyOrNULL( desc ))
 		return; // ignore fantom cmds
 
 	if( name[0] == '+' || name[0] == '-' )
@@ -1522,15 +1523,11 @@ void GAME_EXPORT Host_WriteServerConfig( const char *name )
 
 	Q_snprintf( newconfigfile, MAX_STRING, "%s.new", name );
 
-	// FIXME: move this out until menu parser is done
-	CSCR_LoadDefaultCVars( "settings.scr" );
-
 	if(( f = FS_Open( newconfigfile, "w", false )) != NULL )
 	{
 		Host_InitializeConfig( f, "game.cfg", "multiplayer server temporary config" );
 
 		Cvar_WriteVariables( f, FCVAR_SERVER );
-		CSCR_WriteGameCVars( f, "settings.scr" );
 
 		Host_FinalizeConfig( f, name );
 	}
@@ -1546,14 +1543,19 @@ save opengl variables into opengl.cfg
 */
 void Host_WriteOpenGLConfig( void )
 {
+	const char *config_name;
 	string name;
 	file_t	*f;
 
-	if( Sys_CheckParm( "-nowriteconfig" ) )
+	if( Sys_CheckParm( "-nowriteconfig" ) || !ref.dllFuncs.R_GetConfigName )
 		return;
 
-	Q_snprintf( name, sizeof( name ), "%s.cfg", ref.dllFuncs.R_GetConfigName() );
+	config_name = ref.dllFuncs.R_GetConfigName();
 
+	if( !config_name )
+		return;
+
+	Q_snprintf( name, sizeof( name ), "%s.cfg", config_name );
 
 	f = FS_Open( va( "%s.new", name ), "w", false );
 	if( f )

@@ -18,14 +18,12 @@ GNU General Public License for more details.
 #include "net_encode.h"
 #include "cl_tent.h"
 #include "input.h"
-#include "kbutton.h"
 #include "vgui_draw.h"
 #include "library.h"
 #include "vid_common.h"
 #include "pm_local.h"
 #include "multi_emulator.h"
 
-#define MAX_CMD_BUFFER        8000
 #define CL_CONNECTION_TIMEOUT 15.0f
 #define CL_CONNECTION_RETRIES 5
 #define CL_TEST_RETRIES       5
@@ -99,6 +97,7 @@ CVAR_DEFINE_AUTO( rate, "25000", FCVAR_USERINFO|FCVAR_ARCHIVE|FCVAR_FILTERABLE, 
 static CVAR_DEFINE_AUTO( cl_ticket_generator, "revemu2013", FCVAR_ARCHIVE, "you wouldn't steal a car" );
 static CVAR_DEFINE_AUTO( cl_advertise_engine_in_name, "1", FCVAR_ARCHIVE|FCVAR_PRIVILEGED, "add [Xash3D] to the nickname when connecting to GoldSrc servers" );
 static CVAR_DEFINE_AUTO( cl_log_outofband, "0", FCVAR_ARCHIVE, "log out of band messages, can be useful for server admins and for engine debugging" );
+static CVAR_DEFINE_AUTO( cl_autorecord, "0", 0, "automatically start recording a demo after joining the server" );
 
 client_t		cl;
 client_static_t	cls;
@@ -175,16 +174,23 @@ connprotocol_t CL_Protocol( void )
 
 void CL_SetCheatState( qboolean multiplayer, qboolean allow_cheats )
 {
+	uint flags;
+
 	if( NET_NetadrType( &cls.netchan.remote_address ) == NA_LOOPBACK )
 		return;
 
+	if( cls.demoplayback )
+		flags = FCVAR_SERVER;
+	else
+		flags = FCVAR_SERVER | FCVAR_READ_ONLY;
+
 	if( allow_cheats )
 	{
-		Cvar_FullSet( "sv_cheats", "1", FCVAR_READ_ONLY | FCVAR_SERVER );
+		Cvar_FullSet( "sv_cheats", "1", flags );
 	}
 	else
 	{
-		Cvar_FullSet( "sv_cheats", "0", FCVAR_READ_ONLY | FCVAR_SERVER );
+		Cvar_FullSet( "sv_cheats", "0", flags );
 		Cvar_SetCheatState();
 	}
 }
@@ -223,7 +229,15 @@ static void CL_CheckClientState( void )
 			CL_ServerCommand(true, "specmode 4\n");
 		}
 
-		Con_DPrintf( "client connected at %.2f sec\n", Sys_DoubleTime() - cls.timestart );
+		Con_DPrintf( "client connected at %.2f sec\n", Platform_DoubleTime() - cls.timestart );
+
+		if( cl_autorecord.value && !cls.demoplayback )
+		{
+			if( cls.demorecording )
+				CL_Stop_f();
+
+			Cbuf_AddTextf( "record %s_%s\n", Q_timestamp( TIME_FILENAME ), clgame.mapname );
+		}
 	}
 }
 
@@ -744,6 +758,7 @@ Including both the reliable commands and the usercmds
 */
 static void CL_WritePacket( void )
 {
+	enum { MAX_CMD_BUFFER = 8000 };
 	sizebuf_t buf;
 	byte data[MAX_CMD_BUFFER] = { 0 };
 	runcmd_t *pcmd;
@@ -939,7 +954,7 @@ static void CL_BeginUpload_f( void )
 
 	name = Cmd_Argv( 1 );
 
-	if( !COM_CheckString( name ))
+	if( COM_StringEmptyOrNULL( name ))
 		return;
 
 	if( !cl_allow_upload.value )
@@ -1038,7 +1053,8 @@ static void CL_GetCDKey( char *protinfo, size_t protinfosize )
 
 static void CL_WriteSteamTicket( sizebuf_t *send )
 {
-	const char *s;
+	string key;
+	netadr_t adr = { .type = NA_LOOPBACK, }; // goldsrc servers don't get unique key as xashid isn't sent raw to them
 	uint32_t crc;
 	char buf[768] = { 0 }; // setti and steamemu return 768
 	int i = sizeof( buf );
@@ -1049,23 +1065,50 @@ static void CL_WriteSteamTicket( sizebuf_t *send )
 		return;
 	}
 
-	//if( !Q_strcmp( cl_ticket_generator.string, "steam" )
-	//{
-	//	i = SteamBroker_InitiateGameConnection( buf, sizeof( buf ));
-	//	MSG_WriteBytes( send, buf, i );
-	//	return;
-	//}
-
-	s = ID_GetMD5();
+	ID_GetMD5ForAddress( key, adr, sizeof( key ));
 	CRC32_Init( &crc );
-	CRC32_ProcessBuffer( &crc, s, Q_strlen( s ));
+	CRC32_ProcessBuffer( &crc, key, Q_strlen( key ));
 	crc = CRC32_Final( crc );
-	i = GenerateRevEmu2013( buf, s, crc );
+	i = GenerateRevEmu2013( buf, key, crc );
 	MSG_WriteBytes( send, buf, i );
 
 	// RevEmu2013: pTicket[1] = revHash (low), pTicket[5] = 0x01100001 (high)
 	*(uint32_t*)cls.steamid = LittleLong( ((uint32_t*)buf)[1] );
 	*(uint32_t*)(cls.steamid + 4) = LittleLong( ((uint32_t*)buf)[5] );
+}
+
+void CL_SendGoldSrcConnectPacket( netadr_t adr, int challenge, const void *ticket, size_t ticketlen )
+{
+	const char *name;
+	sizebuf_t send;
+	byte send_buf[2048];
+	char protinfo[MAX_INFO_STRING];
+
+	protinfo[0] = 0;
+
+	Info_SetValueForKey( protinfo, "prot", "3", sizeof( protinfo )); // steam auth type
+	Info_SetValueForKeyf( protinfo, "unique", sizeof( protinfo ), "%i", 0xffffffff );
+	Info_SetValueForKey( protinfo, "raw", "steam", sizeof( protinfo ));
+	CL_GetCDKey( protinfo, sizeof( protinfo ));
+	name = Info_ValueForKey( cls.userinfo, "name" );
+	if( cl_advertise_engine_in_name.value && Q_strnicmp( name, "[Xash3D]", 8 ))
+		Info_SetValueForKeyf( cls.userinfo, "name", sizeof( cls.userinfo ), "[Xash3D]%s", name );
+
+	MSG_Init( &send, "GoldSrcConnect", send_buf, sizeof( send_buf ));
+	MSG_WriteLong( &send, NET_HEADER_OUTOFBANDPACKET );
+	MSG_WriteStringf( &send, C2S_CONNECT" %i %i \"%s\" \"%s\"\n",
+		PROTOCOL_GOLDSRC_VERSION, challenge, protinfo, cls.userinfo );
+	MSG_SeekToBit( &send, -8, SEEK_CUR ); // rewrite null terminator
+	if( ticket == NULL )
+		CL_WriteSteamTicket( &send );
+	else
+		MSG_WriteBytes( &send, ticket, ticketlen );
+
+	if( MSG_CheckOverflow( &send ))
+		Con_Printf( S_ERROR "%s: %s overflow!\n", __func__, MSG_GetName( &send ) );
+
+	NET_SendPacket( NS_CLIENT, MSG_GetNumBytesWritten( &send ), MSG_GetData( &send ), adr );
+	Con_Printf( "Trying to connect with GoldSrc 48 protocol\n" );
 }
 
 /*
@@ -1079,7 +1122,6 @@ connect.
 static void CL_SendConnectPacket( connprotocol_t proto, int challenge )
 {
 	char protinfo[MAX_INFO_STRING];
-	const char *key = ID_GetMD5();
 	netadr_t adr = { 0 };
 	int input_devices;
 	netadrtype_t adrtype;
@@ -1110,38 +1152,32 @@ static void CL_SendConnectPacket( connprotocol_t proto, int challenge )
 		Info_SetValueForKey( protinfo, "a", Q_buildarch(), sizeof( protinfo ) );
 	}
 
+	cls.broker_wait = false;
+
 	if( proto == PROTO_GOLDSRC )
 	{
-		const char *name;
-		sizebuf_t send;
-		byte send_buf[2048];
+		// if the cl_ticket_generator is set to "steam" we need to get ticket
+		// from steam broker, which is asynchronous process by nature
+		if( !Q_stricmp( cl_ticket_generator.string, "steam" ))
+		{
+			if( SteamBroker_InitiateGameConnection( adr, challenge ))
+			{
+				// we are waiting for the broker response...
+				cls.broker_wait = true;
+				cls.timestart = Platform_DoubleTime();
+				return;
+			}
+		}
 
-		Info_SetValueForKey( protinfo, "prot", "3", sizeof( protinfo )); // steam auth type
-		Info_SetValueForKeyf( protinfo, "unique", sizeof( protinfo ), "%i", 0xffffffff );
-		Info_SetValueForKey( protinfo, "raw", "steam", sizeof( protinfo ));
-		CL_GetCDKey( protinfo, sizeof( protinfo ));
-
-		name = Info_ValueForKey( cls.userinfo, "name" );
-		if( cl_advertise_engine_in_name.value && Q_strnicmp( name, "[Xash3D]", 8 ))
-			Info_SetValueForKeyf( cls.userinfo, "name", sizeof( cls.userinfo ), "[Xash3D]%s", name );
-
-		MSG_Init( &send, "GoldSrcConnect", send_buf, sizeof( send_buf ));
-		MSG_WriteLong( &send, NET_HEADER_OUTOFBANDPACKET );
-		MSG_WriteStringf( &send, C2S_CONNECT" %i %i \"%s\" \"%s\"\n",
-			PROTOCOL_GOLDSRC_VERSION, challenge, protinfo, cls.userinfo );
-		MSG_SeekToBit( &send, -8, SEEK_CUR ); // rewrite null terminator
-		CL_WriteSteamTicket( &send );
-
-		if( MSG_CheckOverflow( &send ))
-			Con_Printf( S_ERROR "%s: %s overflow!\n", __func__, MSG_GetName( &send ) );
-
-		NET_SendPacket( NS_CLIENT, MSG_GetNumBytesWritten( &send ), MSG_GetData( &send ), adr );
-		Con_Printf( "Trying to connect with GoldSrc 48 protocol\n" );
+		CL_SendGoldSrcConnectPacket( adr, challenge, NULL, 0 );
 	}
 	else
 	{
 		const char *qport = Cvar_VariableString( "net_qport" );
 		int extensions = NET_EXT_SPLITSIZE;
+		string key;
+
+		ID_GetMD5ForAddress( key, adr, sizeof( key ));
 
 		// reset nickname from cvar value
 		Info_SetValueForKey( cls.userinfo, "name", name.string, sizeof( cls.userinfo ));
@@ -1151,13 +1187,13 @@ static void CL_SendConnectPacket( connprotocol_t proto, int challenge )
 
 		Info_SetValueForKey( protinfo, "uuid", key, sizeof( protinfo ));
 		Info_SetValueForKey( protinfo, "qport", qport, sizeof( protinfo ));
-		Info_SetValueForKeyf( protinfo, "ext", sizeof( protinfo ), "%d", extensions);
+		Info_SetValueForKeyf( protinfo, "ext", sizeof( protinfo ), "%d", extensions );
 
 		Netchan_OutOfBandPrint( NS_CLIENT, adr, C2S_CONNECT" %i %i \"%s\" \"%s\"\n", PROTOCOL_VERSION, challenge, protinfo, cls.userinfo );
 		Con_Printf( "Trying to connect with modern protocol\n" );
 	}
 
-	cls.timestart = Sys_DoubleTime();
+	cls.timestart = Platform_DoubleTime();
 }
 
 /*
@@ -1313,7 +1349,7 @@ static void CL_CheckForResend( void )
 		else
 			CL_SendBandwidthTest( adr, false );
 	}
-	else
+	else if( !cls.broker_wait )
 	{
 		Con_Printf( "Connecting to %s... (retry #%i)\n", cls.servername, cls.connect_retry );
 		CL_SendGetChallenge( adr );
@@ -1459,7 +1495,7 @@ static void CL_Rcon_f( void )
 	netadr_t to;
 	int	i;
 
-	if( !COM_CheckString( rcon_password.string ))
+	if( COM_StringEmptyOrNULL( rcon_password.string ))
 	{
 		Con_Printf( "You must set 'rcon_password' before issuing an rcon command.\n" );
 		return;
@@ -1473,7 +1509,7 @@ static void CL_Rcon_f( void )
 	}
 	else
 	{
-		if( !COM_CheckString( rcon_address.string ))
+		if( COM_StringEmptyOrNULL( rcon_address.string ))
 		{
 			Con_Printf( "You must either be connected or set the 'rcon_address' cvar to issue rcon commands\n" );
 			return;
@@ -1532,7 +1568,7 @@ void CL_ClearState( void )
 	memset( &clgame.fade, 0, sizeof( clgame.fade ));
 	memset( &clgame.shake, 0, sizeof( clgame.shake ));
 	clgame.mapname[0] = '\0';
-	Cvar_FullSet( "cl_background", "0", FCVAR_READ_ONLY );
+	Cvar_DirectFullSet( &cl_background, "0", FCVAR_READ_ONLY );
 	cl.maxclients = 1; // allow to drawing player in menu
 	cl.mtime[0] = cl.mtime[1] = 1.0f; // because level starts from 1.0f second
 	cls.signon = 0;
@@ -1679,6 +1715,7 @@ void CL_Disconnect( void )
 
 	// send a disconnect message to the server
 	CL_SendDisconnectMessage( cls.legacymode );
+	SteamBroker_TerminateGameConnection();
 	CL_ClearState ();
 
 	S_StopBackgroundTrack ();
@@ -1736,18 +1773,22 @@ CL_LocalServers_f
 */
 static void CL_LocalServers_f( void )
 {
-	netadr_t adr = { 0 };
-
 	Con_Printf( "Scanning for servers on the local network area...\n" );
 	NET_Config( true, true ); // allow remote
 
-	// send a broadcast packet
-	NET_NetadrSetType( &adr, NA_BROADCAST );
-	adr.port = MSG_BigShort( PORT_SERVER );
-	Netchan_OutOfBandPrint( NS_CLIENT, adr, A2A_INFO" %i", PROTOCOL_VERSION );
+	for( int i = 0; i < 10; i++ )
+	{
+		netadr_t adr =
+		{
+			.port = MSG_BigShort( PORT_SERVER + i ),
+		};
 
-	NET_NetadrSetType( &adr, NA_MULTICAST_IP6 );
-	Netchan_OutOfBandPrint( NS_CLIENT, adr, A2A_INFO" %i", PROTOCOL_VERSION );
+		NET_NetadrSetType( &adr, NA_BROADCAST );
+		Netchan_OutOfBandPrint( NS_CLIENT, adr, A2A_INFO" %i", PROTOCOL_VERSION );
+
+		NET_NetadrSetType( &adr, NA_MULTICAST_IP6 );
+		Netchan_OutOfBandPrint( NS_CLIENT, adr, A2A_INFO" %i", PROTOCOL_VERSION );
+	}
 }
 
 /*
@@ -1840,7 +1881,7 @@ static void CL_Reconnect_f( void )
 		return;
 	}
 
-	if( COM_CheckString( cls.servername ))
+	if( !COM_StringEmptyOrNULL( cls.servername ))
 	{
 		connprotocol_t proto = cls.legacymode;
 
@@ -1855,6 +1896,45 @@ static void CL_Reconnect_f( void )
 
 		Con_Printf( "reconnecting...\n" );
 	}
+}
+
+/*
+=================
+CL_Retry_f
+
+retry connection to last server
+=================
+*/
+static void CL_Retry_f( void )
+{
+	if( COM_StringEmptyOrNULL( cls.servername ))
+	{
+		Con_Printf( "Can't retry, no previous connection.\n" );
+		return;
+	}
+
+	// can't retry when running a server
+	if( SV_Active( ))
+	{
+		Con_Printf( "Can't retry when running a server.\n" );
+		return;
+	}
+
+	NET_Config( true, !cl_nat.value ); // allow remote
+
+	Con_Printf( "Commencing connection retry to %s\n", cls.servername );
+	CL_Disconnect();
+
+	UI_SetActiveMenu( false );
+	Key_SetKeyDest( key_console );
+
+	cls.state = ca_connecting;
+	cls.connect_time = MAX_HEARTBEAT; // CL_CheckForResend() will fire immediately
+	cls.max_fragment_size = FRAGMENT_MAX_SIZE;
+	cls.connect_retry = 0;
+	memset( &cls.bandwidth_test, 0, sizeof( cls.bandwidth_test ));
+	cls.spectator = false;
+	cls.signon = 0;
 }
 
 /*
@@ -1939,17 +2019,17 @@ static void CL_ParseStatusMessage( netadr_t from, sizebuf_t *msg )
 
 	CL_FixupColorStringsForInfoString( s, infostring, sizeof( infostring ));
 
-	if( !COM_CheckString( Info_ValueForKey( infostring, "gamedir" )))
+	if( COM_StringEmptyOrNULL( Info_ValueForKey( infostring, "gamedir" )))
 		return; // unsupported proto
 
-	if( !COM_CheckString( Info_ValueForKey( infostring, "host" )))
+	if( COM_StringEmptyOrNULL( Info_ValueForKey( infostring, "host" )))
 		return;
 
-	if( !COM_CheckString( Info_ValueForKey( infostring, "map" )))
+	if( COM_StringEmptyOrNULL( Info_ValueForKey( infostring, "map" )))
 		return;
 
 	// don't let servers pretend they're something else
-	if( COM_CheckString( Info_ValueForKey( infostring, "gs" )))
+	if( !COM_StringEmptyOrNULL( Info_ValueForKey( infostring, "gs" )))
 		return;
 
 	maxcl = Q_atoi( Info_ValueForKey( infostring, "maxcl" ));
@@ -2310,7 +2390,7 @@ static void CL_Print( const char *c, const char *args, netadr_t from, sizebuf_t 
 
 	s = c[0] == A2C_GOLDSRC_PRINT ? args + 1 : MSG_ReadString( msg );
 
-	if( !COM_CheckStringEmpty( s ))
+	if( COM_StringEmpty( s ))
 		return;
 
 	Con_Printf( "Remote message from %s:\n", NET_AdrToString( from ));
@@ -2327,7 +2407,20 @@ static void CL_Challenge( const char *c, netadr_t from )
 
 	// try to autodetect protocol by challenge response
 	if( !Q_strcmp( c, S2C_GOLDSRC_CHALLENGE ))
+	{
 		cls.legacymode = PROTO_GOLDSRC;
+
+		cls.steam_auth = Q_atoi( Cmd_Argv( 2 )) == 3;
+
+		if( Cmd_Argc( ) == 5 && cls.steam_auth )
+		{
+			// arg 2 auth protocol, we only support steam
+			// arg 3 if steam is server's steam id
+			// arg 4 if steam is server's VAC status
+			cls.server_steamid = strtoull( Cmd_Argv( 3 ), NULL, 10 );
+			cls.vac2_secure = Q_atoi( Cmd_Argv( 4 ));
+		}
+	}
 
 	cls.bandwidth_test.challenge = Q_atoi( Cmd_Argv( 1 ));
 
@@ -2491,6 +2584,10 @@ static void CL_ConnectionlessPacket( netadr_t from, sizebuf_t *msg )
 		Con_Reportf( "%s: %s : %s\n", __func__, NET_AdrToString( from ), c );
 
 	// server connection
+	if( !Q_strcmp( c, "sb_connect" ))
+	{
+		SteamBroker_HandlePacket( from, msg );
+	}
 	if( !Q_strcmp( c, S2C_GOLDSRC_CONNECTION ) || !Q_strcmp( c, S2C_CONNECTION ))
 	{
 		CL_ClientConnect( cls.legacymode, c, from );
@@ -2740,7 +2837,7 @@ static void CL_ReadPackets( void )
 		return;
 
 	// if in the debugger last frame, don't timeout
-	if( host.frametime > 5.0f ) cls.netchan.last_received = Sys_DoubleTime();
+	if( host.frametime > 5.0f ) cls.netchan.last_received = Platform_DoubleTime();
 
 	// check timeout
 	if( cls.state >= ca_connected && cls.state != ca_cinematic && !cls.demoplayback )
@@ -2764,7 +2861,7 @@ Replace the displayed name for some resources
 */
 static const char *CL_CleanFileName( const char *filename )
 {
-	if( COM_CheckString( filename ) && filename[0] == '!' )
+	if( !COM_StringEmptyOrNULL( filename ) && filename[0] == '!' )
 		return "customization";
 
 	return filename;
@@ -2819,7 +2916,7 @@ void CL_ProcessFile( qboolean successfully_received, const char *filename )
 	byte		rgucMD5_hash[16];
 	resource_t	*p;
 
-	if( COM_CheckString( filename ) && successfully_received )
+	if( !COM_StringEmptyOrNULL( filename ) && successfully_received )
 	{
 		if( filename[0] != '!' )
 			Con_Printf( "processing %s\n", filename );
@@ -3263,7 +3360,7 @@ static void CL_ListMessages_f( void )
 	Con_Printf( "num size name\n" );
 	for( i = 0; i < MAX_USER_MESSAGES; i++ )
 	{
-		if( !COM_CheckStringEmpty( clgame.msg[i].name ))
+		if( COM_StringEmpty( clgame.msg[i].name ))
 			break;
 
 		Con_Printf( "%3d\t%3d\t%s\n", clgame.msg[i].number, clgame.msg[i].size, clgame.msg[i].name );
@@ -3289,6 +3386,7 @@ static void CL_InitLocal( void )
 	Cvar_RegisterVariable( &cl_ticket_generator );
 	Cvar_RegisterVariable( &cl_advertise_engine_in_name );
 	Cvar_RegisterVariable( &cl_log_outofband );
+	Cvar_RegisterVariable( &cl_autorecord );
 
 	Cvar_RegisterVariable( &showpause );
 	Cvar_RegisterVariable( &mp_decals );
@@ -3359,7 +3457,6 @@ static void CL_InitLocal( void )
 	Cvar_RegisterVariable( &hud_fontrender );
 	Cvar_RegisterVariable( &hud_scale );
 	Cvar_RegisterVariable( &hud_scale_minimal_width );
-	Cvar_Get( "cl_background", "0", FCVAR_READ_ONLY, "indicate what background map is running" );
 	Cvar_RegisterVariable( &cl_showevents );
 	Cvar_Get( "lastdemo", "", FCVAR_ARCHIVE, "last played demo" );
 	Cvar_RegisterVariable( &ui_renderworld );
@@ -3427,6 +3524,7 @@ static void CL_InitLocal( void )
 
 	Cmd_AddCommand ("connect", CL_Connect_f, "connect to a server by hostname" );
 	Cmd_AddCommand ("reconnect", CL_Reconnect_f, "reconnect to current level" );
+	Cmd_AddCommand ("retry", CL_Retry_f, "retry connection to last server" );
 
 	Cmd_AddCommand ("rcon", CL_Rcon_f, "sends a command to the server console (rcon_password and rcon_address required)" );
 
@@ -3590,6 +3688,7 @@ void CL_Init( void )
 		Host_Error( "can't initialize %s: %s\n", libpath, COM_GetLibraryError( ));
 
 	ID_Init();
+	SteamBroker_Init();
 
 	cls.build_num = 0;
 	cls.initialized = true;
@@ -3621,6 +3720,7 @@ void CL_Shutdown( void )
 	Mobile_Shutdown ();
 	SCR_Shutdown ();
 	CL_UnloadProgs ();
+	SteamBroker_Shutdown();
 	cls.initialized = false;
 
 	// for client-side VGUI support we use other order
@@ -3634,5 +3734,4 @@ void CL_Shutdown( void )
 	R_Shutdown ();
 
 	Con_Shutdown ();
-
 }

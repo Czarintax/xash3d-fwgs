@@ -18,7 +18,6 @@ GNU General Public License for more details.
 
 //#include "common.h"
 #include "edict.h"
-#include "eiface.h"
 #include "ref_api.h"
 #include "studio.h"
 
@@ -53,13 +52,14 @@ typedef struct consistency_s
 typedef struct
 {
 	int		flags;
-	CRC32_t		initialCRC;
+	uint32_t initialCRC;
 } model_info_t;
 
 // values for model_t's needload
-#define NL_UNREFERENCED	0		// this model can be freed after sequence precaching is done
-#define NL_NEEDS_LOADED	1
-#define NL_PRESENT		2
+#define NL_UNREFERENCED 0
+#define NL_NEEDS_LOADED 1
+#define NL_PRESENT      2
+#define NL_FREE_UNUSED  3 // this model can be freed after sequence precaching is done
 
 typedef struct hullnode_s
 {
@@ -155,7 +155,7 @@ void *Mod_StudioExtradata( model_t *mod );
 model_t *Mod_FindName( const char *name, qboolean trackCRC );
 model_t *Mod_LoadModel( model_t *mod, qboolean crash );
 model_t *Mod_ForName( const char *name, qboolean crash, qboolean trackCRC );
-qboolean Mod_ValidateCRC( const char *name, CRC32_t crc );
+qboolean Mod_ValidateCRC( const char *name, uint32_t crc );
 void Mod_NeedCRC( const char *name, qboolean needCRC );
 void Mod_FreeUnused( void );
 
@@ -177,21 +177,12 @@ int Mod_SaveLump( const char *filename, const int lump, void *lumpdata, int lump
 mleaf_t *Mod_PointInLeaf( const vec3_t p, mnode_t *node, model_t *mod );
 int Mod_SampleSizeForFace( const msurface_t *surf );
 byte *Mod_GetPVSForPoint( const vec3_t p );
-void Mod_UnloadBrushModel( model_t *mod );
 void Mod_PrintWorldStats_f( void );
-
-//
-// mod_dbghulls.c
-//
-void R_DrawWorldHull( void );
-void R_DrawModelHull( model_t *mod );
-void Mod_ReleaseHullPolygons( void );
 
 //
 // mod_studio.c
 //
 void Mod_LoadStudioModel( model_t *mod, const void *buffer, qboolean *loaded );
-void Mod_UnloadStudioModel( model_t *mod );
 void Mod_InitStudioAPI( void );
 void Mod_InitStudioHull( void );
 void Mod_ResetStudioAPI( void );
@@ -201,7 +192,6 @@ void Mod_StudioGetAttachment( const edict_t *e, int iAttachment, float *org, flo
 void Mod_GetBonePosition( const edict_t *e, int iBone, float *org, float *ang );
 hull_t *Mod_HullForStudio( model_t *m, float frame, int seq, vec3_t ang, vec3_t org, vec3_t size, byte *pcnt, byte *pbl, int *hitboxes, edict_t *ed );
 void *R_StudioGetAnim( studiohdr_t *m_pStudioHeader, model_t *m_pSubModel, mstudioseqdesc_t *pseqdesc );
-void Mod_StudioComputeBounds( void *buffer, vec3_t mins, vec3_t maxs, qboolean ignore_sequences );
 int Mod_HitgroupForStudioHull( int index );
 void Mod_ClearStudioCache( void );
 

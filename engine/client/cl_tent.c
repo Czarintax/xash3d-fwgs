@@ -2050,6 +2050,14 @@ void CL_ParseTempEntity( sizebuf_t *msg, connprotocol_t proto )
 			else entityIndex = 0;
 
 			pEnt = CL_GetEntityByIndex( entityIndex );
+
+			// this might be obvious, but do not exit _before_ all data has been read or we will get parsing error later
+			if( !pEnt )
+			{
+				Con_Reportf( "%s: ignored temp entity message %d, invalid entity num %d\n", __func__, type, entityIndex );
+				break;
+			}
+
 			modelIndex = pEnt->curstate.modelindex;
 		}
 		CL_DecalShoot( CL_DecalIndex( decalIndex ), entityIndex, modelIndex, pos, type == TE_BSPDECAL ? FDECAL_PERMANENT : 0 );
@@ -2990,7 +2998,7 @@ int GAME_EXPORT CL_DecalIndexFromName( const char *name )
 {
 	int	i;
 
-	if( !COM_CheckString( name ))
+	if( COM_StringEmptyOrNULL( name ))
 		return 0;
 
 	// look through the loaded sprite name list for SpriteName
@@ -3084,7 +3092,7 @@ EFRAGS MANAGEMENT
 */
 /*
 =======================
-R_ClearStaticEntities
+CL_ClearStaticEntities
 
 e.g. by demo request
 =======================

@@ -270,7 +270,7 @@ void CL_CenterPrint( const char *text, float y )
 {
 	cl_font_t *font = Con_GetCurFont();
 
-	if( !COM_CheckString( text ) || !font || !font->valid )
+	if( COM_StringEmptyOrNULL( text ) || !font || !font->valid )
 		return;
 
 	clgame.centerPrint.totalWidth = 0;
@@ -583,7 +583,7 @@ static void CL_InitTitles( const char *filename )
 	pMemFile = FS_LoadFile( filename, &fileSize, false );
 	if( !pMemFile ) return;
 
-	CL_TextMessageParse( pMemFile, fileSize );
+	clgame.titles = CL_TextMessageParse( clgame.mempool, pMemFile, fileSize, &clgame.numTitles );
 	Mem_Free( pMemFile );
 }
 
@@ -596,7 +596,9 @@ Template to show hud messages
 */
 void CL_HudMessage( const char *pMessage )
 {
-	if( !COM_CheckString( pMessage )) return;
+	if( COM_StringEmptyOrNULL( pMessage ))
+		return;
+
 	CL_DispatchUserMessage( "HudText", Q_strlen( pMessage ) + 1, (void *)pMessage );
 }
 
@@ -1114,7 +1116,12 @@ void CL_ClearSpriteTextures( void )
 	int	i;
 
 	for( i = 1; i < MAX_CLIENT_SPRITES; i++ )
-		clgame.sprites[i].needload = NL_UNREFERENCED;
+	{
+		if( clgame.sprites[i].needload == NL_UNREFERENCED )
+			continue;
+
+		clgame.sprites[i].needload = NL_FREE_UNUSED;
+	}
 }
 
 // it's a Valve default value for LoadMapSprite (probably must be power of two)
@@ -1316,7 +1323,7 @@ static model_t *CL_LoadSpriteModel( const char *filename, uint type, uint texFla
 	model_t	*mod;
 	int	i, start;
 
-	if( !COM_CheckString( filename ))
+	if( COM_StringEmptyOrNULL( filename ))
 	{
 		Con_Reportf( S_ERROR "%s: bad name!\n", __func__ );
 		return NULL;
@@ -1348,7 +1355,7 @@ static model_t *CL_LoadSpriteModel( const char *filename, uint type, uint texFla
 
 	for( i = 0, mod = &clgame.sprites[start]; i < MAX_CLIENT_SPRITES / 2; i++, mod++ )
 	{
-		if( !mod->name[0] )
+		if( mod->needload == NL_UNREFERENCED )
 			break; // this is a valid spot
 	}
 
@@ -1835,7 +1842,7 @@ pfnServerCmd
 */
 static int GAME_EXPORT pfnServerCmd( const char *szCmdString )
 {
-	if( !COM_CheckString( szCmdString ))
+	if( COM_StringEmptyOrNULL( szCmdString ))
 		return 0;
 
 	// just like the client typed "cmd xxxxx" at the console
@@ -1853,7 +1860,7 @@ pfnClientCmd
 */
 static int GAME_EXPORT pfnClientCmd( const char *szCmdString )
 {
-	if( !COM_CheckString( szCmdString ))
+	if( COM_StringEmptyOrNULL( szCmdString ))
 		return 0;
 
 	if( cls.initialized )
@@ -1878,7 +1885,7 @@ pfnFilteredClientCmd
 */
 static int GAME_EXPORT pfnFilteredClientCmd( const char *szCmdString )
 {
-	if( !COM_CheckString( szCmdString ))
+	if( COM_StringEmptyOrNULL( szCmdString ))
 		return 0;
 
 	// a1ba:
@@ -2060,7 +2067,7 @@ prints directly into console (can skip notify)
 */
 static void GAME_EXPORT pfnConsolePrint( const char *string )
 {
-	if( !COM_CheckString( string ))
+	if( COM_StringEmptyOrNULL( string ))
 		return;
 
 	// WON GoldSrc behavior
@@ -2432,7 +2439,7 @@ static int GAME_EXPORT CL_FindModelIndex( const char *m )
 	char filepath[MAX_QPATH];
 	int  i;
 
-	if( !COM_CheckString( m ))
+	if( COM_StringEmptyOrNULL( m ))
 		return 0;
 
 	Q_strncpy( filepath, m, sizeof( filepath ));
@@ -2733,7 +2740,7 @@ static const char *pfnGetLevelName( void )
 	// a1ba: don't return maps/.bsp if no map is loaded yet
 	// in GoldSrc this is handled by cl.levelname field but we don't have it
 	// so emulate this behavior here
-	if( cls.state >= ca_connected && COM_CheckStringEmpty( clgame.mapname ))
+	if( cls.state >= ca_connected && !COM_StringEmpty( clgame.mapname ))
 		Q_snprintf( mapname, sizeof( mapname ), "maps/%s.bsp", clgame.mapname );
 	else mapname[0] = '\0'; // not in game
 
@@ -2804,7 +2811,7 @@ static int GAME_EXPORT COM_ExpandFilename( const char *fileName, char *nameOutBu
 {
 	char		result[MAX_SYSPATH];
 
-	if( !COM_CheckString( fileName ) || !nameOutBuffer || nameOutBufferSize <= 0 )
+	if( COM_StringEmptyOrNULL( fileName ) || !nameOutBuffer || nameOutBufferSize <= 0 )
 		return 0;
 
 	// filename examples:
@@ -2917,7 +2924,7 @@ pfnServerCmdUnreliable
 */
 static int GAME_EXPORT pfnServerCmdUnreliable( char *szCmdString )
 {
-	if( !COM_CheckString( szCmdString ))
+	if( COM_StringEmptyOrNULL( szCmdString ))
 		return 0;
 
 	MSG_BeginClientCmd( &cls.datagram, clc_stringcmd );
@@ -2934,10 +2941,15 @@ pfnGetMousePos
 */
 static void GAME_EXPORT pfnGetMousePos( struct tagPOINT *ppt )
 {
+	int x, y;
+
 	if( !ppt )
 		return;
 
-	Platform_GetMousePos( &ppt->x, &ppt->y );
+	Platform_GetMousePos( &x, &y );
+
+	ppt->x = x;
+	ppt->y = y;
 }
 
 /*
@@ -3206,7 +3218,8 @@ handle colon separately
 */
 static char *pfnParseFile( char *data, char *token )
 {
-	return COM_ParseFileSafe( data, token, PFILE_TOKEN_MAX_LENGTH, PFILE_HANDLECOLON, NULL, NULL );
+	// GoldSrc uses 1024 byte tokens
+	return COM_ParseFileSafe( data, token, 1024, PFILE_HANDLECOLON, NULL, NULL );
 }
 
 /*
@@ -3948,7 +3961,7 @@ void CL_UnloadProgs( void )
 	if( GI->internal_vgui_support )
 		VGui_Shutdown();
 
-	Cvar_FullSet( "cl_background", "0", FCVAR_READ_ONLY );
+	Cvar_DirectFullSet( &cl_background, "0", FCVAR_READ_ONLY );
 	Cvar_FullSet( "host_clientloaded", "0", FCVAR_READ_ONLY );
 
 	Cvar_Unlink( FCVAR_CLIENTDLL );
@@ -4026,7 +4039,7 @@ qboolean CL_LoadProgs( const char *name )
 	for( i = 0; i < ARRAYSIZE( cdll_exports ); i++ )
 	{
 		if( *(cdll_exports[i].func) != NULL )
-			continue; // already gott through 'F' or 'GetClientAPI'
+			continue; // already got through 'F' or 'GetClientAPI'
 
 		// functions are cleared before all the extensions are evaluated
 		if(( *(cdll_exports[i].func) = (void *)COM_GetProcAddress( clgame.hInstance, cdll_exports[i].name )) == NULL )

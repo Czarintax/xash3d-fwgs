@@ -263,7 +263,7 @@ static void AVI_StreamAudio( movie_state_t *Avi )
 	// keep the same semantics, when S_RAW_SOUND_SOUNDTRACK doesn't play if S_StartStreaming wasn't enabled
 	qboolean disable_stream = Avi->entnum == S_RAW_SOUND_SOUNDTRACK ? !s_listener.streaming : false;
 
-	if( !dma.initialized || disable_stream || s_listener.paused || !Avi->cached_audio )
+	if( !dma.initialized || disable_stream || cl.paused || !Avi->cached_audio )
 		return;
 
 	ch = S_FindRawChannel( Avi->entnum, true );
@@ -355,6 +355,10 @@ qboolean AVI_Think( movie_state_t *Avi )
 	qboolean decoded = false;
 	qboolean flushing = false;
 	qboolean redraw = false;
+
+	if( !Avi->video_ctx )
+		return false;
+
 	const double timebase = (double)Avi->video_ctx->pkt_timebase.den / Avi->video_ctx->pkt_timebase.num;
 	int64_t curtime = round( Platform_DoubleTime() * timebase );
 
@@ -384,7 +388,7 @@ qboolean AVI_Think( movie_state_t *Avi )
 
 		if(( res = pav_read_frame( Avi->fmt_ctx, Avi->pkt )) >= 0 )
 		{
-			if( Avi->pkt->stream_index == Avi->audio_stream )
+			if( Avi->pkt->stream_index == Avi->audio_stream && Avi->audio_ctx )
 			{
 				res = pavcodec_send_packet( Avi->audio_ctx, Avi->pkt );
 				if( res < 0 )

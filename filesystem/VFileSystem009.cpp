@@ -412,7 +412,8 @@ public:
 		qboolean qquoted;
 		char *p;
 
-		p = COM_ParseFileSafe( buf, token, PFILE_FS_TOKEN_MAX_LENGTH, 0, nullptr, &qquoted );
+		// filesystem_stdio expects 512 byte buffers
+		p = COM_ParseFileSafe( buf, token, 512, 0, nullptr, &qquoted );
 
 		if( quoted )
 			*quoted = qquoted;
@@ -422,7 +423,7 @@ public:
 
 	bool FullPathToRelativePath( const char *path, char *out ) override
 	{
-		if( !COM_CheckString( path ))
+		if( COM_StringEmptyOrNULL( path ))
 		{
 			*out = 0;
 			return false;

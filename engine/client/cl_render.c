@@ -45,30 +45,6 @@ static void R_Mem_Free( void *mem, const char *filename, const int fileline )
 	_Mem_Free( mem, filename, fileline );
 }
 
-/*
-=========
-pfnGetFilesList
-
-=========
-*/
-static char **pfnGetFilesList( const char *pattern, int *numFiles, int gamedironly )
-{
-	static search_t	*t = NULL;
-
-	if( t ) Mem_Free( t ); // release prev search
-
-	t = FS_Search( pattern, true, gamedironly );
-
-	if( !t )
-	{
-		if( numFiles ) *numFiles = 0;
-		return NULL;
-	}
-
-	if( numFiles ) *numFiles = t->numfilenames;
-	return t->filenames;
-}
-
 static uint pfnFileBufferCRC32( const void *buffer, const int length )
 {
 	uint	modelCRC = 0;
@@ -91,7 +67,7 @@ static void R_EnvShot( const float *vieworg, const char *name, qboolean skyshot,
 {
 	static vec3_t viewPoint;
 
-	if( !COM_CheckString( name ))
+	if( COM_StringEmptyOrNULL( name ))
 		return;
 
 	if( cls.scrshot_action != scrshot_inactive )
@@ -296,14 +272,14 @@ static render_api_t gRenderAPI =
 	NULL,
 	R_Mem_Alloc,
 	R_Mem_Free,
-	pfnGetFilesList,
+	CL_GetFilesList,
 	pfnFileBufferCRC32,
 	pfnCompareFileTime,
 	Host_Error,
 	(void*)CL_ModelHandle,
-	pfnTime,
+	Sys_FloatTime,
 	Cvar_Set,
-	S_FadeMusicVolume,
+	S_MusicFade,
 	COM_SetRandomSeed,
 };
 
