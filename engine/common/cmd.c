@@ -169,9 +169,9 @@ Returns available space in command buffer
 */
 size_t Cbuf_GetFreeSpace( void )
 {
-	if( cmd_text.cursize >= cmd_text.maxsize )
+	if( cmd_text.cursize >= MAX_CMD_BUFFER )
 		return 0;
-	return cmd_text.maxsize - cmd_text.cursize;
+	return MAX_CMD_BUFFER - cmd_text.cursize;
 }
 
 /*
