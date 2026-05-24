@@ -167,12 +167,10 @@ returns true if server have spawned players
 */
 static qboolean SV_HasActivePlayers( void )
 {
-	int	i;
-
 	// server inactive
 	if( !svs.clients ) return false;
 
-	for( i = 0; i < svs.maxclients; i++ )
+	for( int i = 0; i < svs.maxclients; i++ )
 	{
 		if( svs.clients[i].state == cs_spawned )
 			return true;
@@ -252,7 +250,6 @@ static void SV_CheckCmdTimes( void )
 {
 	sv_client_t	*cl;
 	static double	lastreset = 0;
-	float		diff;
 	int		i;
 
 	if( sv_fps.value != 0.0f )
@@ -264,7 +261,7 @@ static void SV_CheckCmdTimes( void )
 			Cvar_SetValue( "sv_fps", MAX_FPS_HARD );
 	}
 
-	if( Host_IsLocalGame( ))
+	if( Host_IsSinglePlayerGame( ))
 		return;
 
 	if(( host.realtime - lastreset ) < 1.0 )
@@ -282,7 +279,7 @@ static void SV_CheckCmdTimes( void )
 			cl->connecttime = host.realtime;
 		}
 
-		diff = cl->connecttime + cl->cmdtime - host.realtime;
+		float diff = cl->connecttime + cl->cmdtime - host.realtime;
 
 		if( diff > net_clockwindow.value )
 		{
@@ -305,7 +302,6 @@ process incoming file (customization)
 */
 static void SV_ProcessFile( sv_client_t *cl, const char *filename )
 {
-	customization_t	*pList;
 	resource_t	*resource;
 	resource_t	*next;
 	byte		md5[16];
@@ -353,7 +349,7 @@ static void SV_ProcessFile( sv_client_t *cl, const char *filename )
 	bError = false;
 	bFound = false;
 
-	for( pList = cl->customdata.pNext; pList; pList = pList->pNext )
+	for( customization_t *pList = cl->customdata.pNext; pList; pList = pList->pNext )
 	{
 		if( !memcmp( pList->resource.rgucMD5_hash, resource->rgucMD5_hash, 16 ))
 		{
@@ -557,12 +553,9 @@ player processing happens outside RunWorldFrame
 */
 static void SV_PrepWorldFrame( void )
 {
-	edict_t	*ent;
-	int	i;
-
-	for( i = 1; i < svgame.numEntities; i++ )
+	for( int i = 1; i < svgame.numEntities; i++ )
 	{
-		ent = SV_EdictNum( i );
+		edict_t *ent = SV_EdictNum( i );
 		if( ent->free ) continue;
 
 		ClearBits( ent->v.effects, EF_MUZZLEFLASH|EF_NOINTERP );
@@ -796,7 +789,7 @@ qboolean SV_ProcessUserAgent( netadr_t from, const char *useragent )
 {
 	const char *input_devices_str = Info_ValueForKey( useragent, "d" );
 	const char *id = Info_ValueForKey( useragent, "uuid" );
-	size_t len, i;
+	size_t len;
 
 	len = Q_strlen( id );
 	if( len != 32 )
@@ -805,7 +798,7 @@ qboolean SV_ProcessUserAgent( netadr_t from, const char *useragent )
 		return false;
 	}
 
-	for( i = 0; i < len; i++ )
+	for( size_t i = 0; i < len; i++ )
 	{
 		char c = id[i];
 

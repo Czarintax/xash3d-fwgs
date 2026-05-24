@@ -368,8 +368,12 @@ void *_Mem_Realloc( poolhandle_t poolptr, void *memptr, size_t size, qboolean cl
 	ALLOC_CHECK( 3 ) WARN_UNUSED_RESULT;
 void *_Mem_Alloc( poolhandle_t poolptr, size_t size, qboolean clear, const char *filename, int fileline )
 	ALLOC_CHECK( 2 ) MALLOC_LIKE( _Mem_Free, 1 ) WARN_UNUSED_RESULT;
-poolhandle_t _Mem_AllocPool( const char *name, const char *filename, int fileline )
+poolhandle_t _Mem_AllocPool( const char *name, unsigned int flags, const char *filename, int fileline )
 	WARN_UNUSED_RESULT;
+
+// pool flags
+#define MEM_SMALL_ALLOC_OPT (1U<<0) // use compact header for allocations <= 255 bytes (drops filename/fileline tracking)
+
 void _Mem_FreePool( poolhandle_t *poolptr, const char *filename, int fileline );
 void _Mem_EmptyPool( poolhandle_t poolptr, const char *filename, int fileline );
 void _Mem_Check( const char *filename, int fileline );
@@ -385,7 +389,8 @@ void Mem_Stats_f( void );
 	_Mem_Free( *ptr, __FILE__, __LINE__ ); \
 	*ptr = NULL; }
 
-#define Mem_AllocPool( name ) _Mem_AllocPool( name, __FILE__, __LINE__ )
+#define Mem_AllocPool( name ) _Mem_AllocPool( name, 0, __FILE__, __LINE__ )
+#define Mem_AllocPoolExt( name, flags ) _Mem_AllocPool( name, flags, __FILE__, __LINE__ )
 #define Mem_FreePool( pool ) _Mem_FreePool( pool, __FILE__, __LINE__ )
 #define Mem_EmptyPool( pool ) _Mem_EmptyPool( pool, __FILE__, __LINE__ )
 #define Mem_IsAllocated( mem ) Mem_IsAllocatedExt( NULL, mem )
@@ -741,6 +746,7 @@ qboolean CL_DisableVisibility( void );
 qboolean CL_IsRecordDemo( void );
 qboolean CL_IsPlaybackDemo( void );
 qboolean UI_CreditsActive( void );
+void *UI_GetMenuFactory( void );
 int CL_GetMaxClients( void );
 #else
 static inline qboolean CL_Initialized( void ) { return false; }
@@ -751,6 +757,7 @@ static inline qboolean CL_DisableVisibility( void ) { return false; }
 static inline qboolean CL_IsRecordDemo( void ) { return false; }
 static inline qboolean CL_IsPlaybackDemo( void ) { return false; }
 static inline qboolean UI_CreditsActive( void ) { return false; }
+static inline void *UI_GetMenuFactory( void ) { return NULL; }
 static inline int CL_GetMaxClients( void ) { return SV_GetMaxClients(); }
 #endif
 
@@ -853,13 +860,15 @@ static inline connprotocol_t CL_Protocol( void )
 }
 #endif
 
-static inline qboolean Host_IsLocalGame( void )
+// true in singleplayer only but not specific to local game
+static inline qboolean Host_IsSinglePlayerGame( void )
 {
 	if( SV_Active( ))
 		return SV_GetMaxClients() == 1 ? true : false;
 	return CL_GetMaxClients() == 1 ? true : false;
 }
 
+// true when both server and client running on the same host
 static inline qboolean Host_IsLocalClient( void )
 {
 	return CL_Initialized( ) && SV_Initialized( ) ? true : false;
