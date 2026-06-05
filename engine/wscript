@@ -68,6 +68,9 @@ def options(opt):
 	grp.add_option('--disable-curl', action = 'store_false', dest = 'CURL', default = False,
 		help = 'enable curl-based HTTP downloader [default: %(default)s]')
 
+	grp.add_option('--enable-dedicated-library', action = 'store_true', dest = 'DEDICATED_LIBRARY', default = False,
+		help = 'build libxash.so library for dedicated server (allows function hooking) [default: %(default)s]')
+
 	opt.load('sdl2')
 
 def find_sdl(conf):
@@ -143,6 +146,7 @@ def configure(conf):
 			conf.check(features='c cprogram', framework=i, uselib_store=i, msg='Checking for %s framework' % i)
 
 	conf.define('ENGINE_DLL', 1)
+	conf.env.DEDICATED_LIBRARY = conf.options.DEDICATED_LIBRARY
 
 	if conf.options.FFMPEG:
 		pkgconf_args = '--cflags' if conf.options.FFMPEG_DLOPEN else '--cflags --libs'
@@ -241,21 +245,44 @@ def build(bld):
 			libs += ['DL']
 
 	if bld.env.SERVER:
-		# TODO: avoid possible name collision when client is built without launcher
-		# but dedicated server is enabled. They're both called 'xash' in this case
 		server_source = copy(source)
 		server_libs = copy(libs)
-		bld.program(
-			source = server_source,
-			target = 'xash',
-			use = server_libs,
-			includes = includes,
-			defines = 'XASH_ENABLE_MAIN=1 XASH_DEDICATED=1',
-			rpath = bld.env.DEFAULT_RPATH,
-			install_path = bld.env.BINDIR,
-		)
+		
+		# Build as shared library if dedicated library mode is enabled
+		if bld.env.DEDICATED_LIBRARY:
+			# Build the engine as a shared library
+			bld.shlib(
+				source = server_source,
+				target = 'xash',
+				use = server_libs,
+				includes = includes,
+				defines = 'XASH_DEDICATED=1',
+				rpath = bld.env.DEFAULT_RPATH,
+				install_path = bld.env.LIBDIR,
+			)
+			
+			# Build the launcher executable that loads libxash.so
+			bld.program(
+				source = 'common/host_launcher.c',
+				target = 'xash',
+				use = ['DL', 'werror'],
+				includes = includes,
+				rpath = bld.env.DEFAULT_RPATH,
+				install_path = bld.env.BINDIR,
+			)
+		else:
+			# Default: build static executable (original behavior)
+			bld.program(
+				source = server_source,
+				target = 'xash',
+				use = server_libs,
+				includes = includes,
+				defines = 'XASH_ENABLE_MAIN=1 XASH_DEDICATED=1',
+				rpath = bld.env.DEFAULT_RPATH,
+				install_path = bld.env.BINDIR,
+			)
 
-		# the execution stucks on macOS, disable for now
+		# Tests...
 		if bld.env.TESTS and Utils.unversioned_sys_platform() != 'darwin':
 			fs_tg = bld.get_tgen_by_name('filesystem_stdio')
 			fs_tg.post()
